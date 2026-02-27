@@ -118,7 +118,7 @@ export async function exists(email) {
         const user = await findByEmail(email);
         return !!user;
     } catch (error) {
-        throw new Error(`Failed to check user existence: ${error.message}`)
+        throw new Error(`Failed to check user existence: ${error.message}`);
     }
 }
 
