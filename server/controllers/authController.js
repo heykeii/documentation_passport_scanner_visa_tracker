@@ -38,10 +38,10 @@ export async function signup(req,res){
 
     } catch (error) {
         if (error.name === 'ZodError'){
-            return res.status(400).json({
-                success: false,
-                error: error.errors[0].message
-            });
+                return res.status(400).json({
+                    success: false,
+                    error: (error.errors && error.errors.length > 0) ? error.errors[0].message : "Invalid input"
+                });
         }
 
         return res.status(500).json({

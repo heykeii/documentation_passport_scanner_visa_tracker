@@ -1,3 +1,10 @@
+/*
+#0B2447
+#19376D
+#576CBC
+#A5D7E8
+*/
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -120,5 +127,6 @@
     }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Outfit', sans-serif;
     }
 }
