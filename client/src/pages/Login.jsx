@@ -65,7 +65,7 @@ const Login = () => {
         <div className='flex-1 bg-white flex items-center justify-center px-8 py-10 relative overflow-y-auto'>
              <div className="absolute top-0 right-0 w-125 h-125 rounded-full bg-indigo-400/5 blur-[80px] pointer-events-none" />
              <div className="absolute bottom-0 left-0 w-100 h-100 rounded-full bg-indigo-400/5 blur-[80px] pointer-events-none" />
-               <div className="w-full max-w-[520px] bg-white/90 backdrop-blur-sm rounded-[28px] p-10 shadow-[0_32px_80px_rgba(11,36,71,0.10),0_4px_24px_rgba(11,36,71,0.06)] border border-white relative z-10">
+               <div className="w-full max-w-130 bg-white/90 backdrop-blur-sm rounded-[28px] p-10 shadow-[0_32px_80px_rgba(11,36,71,0.10),0_4px_24px_rgba(11,36,71,0.06)] border border-white relative z-10">
                     <div className='flex gap-1.5 mb-8'>
                         <div className='h-0.75 w-8 rounded-full bg-linear-to-r from-[#19376D] to-indigo-500'/>
                         <div className='h-0.75 w-5 rounded-full bg-slate-200'/>
@@ -83,6 +83,7 @@ const Login = () => {
                             Sign in to Continue Managing Passenger Records.
                         </p>
                     </div>
+                    
                
                
                </div>
