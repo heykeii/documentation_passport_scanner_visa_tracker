@@ -140,3 +140,21 @@ export async function getAllUsers(){
         throw new Error (`Failed to get users: ${error.message}`);
     }
 }
+
+export async function updatePassword(email, hashedPassword){
+    try {
+        await docClient.send(
+            new UpdateCommand({
+                TableName: TABLE_NAME,
+                Key: {email},
+                UpdateExpression: "SET PASSWORD = :password, updatedAt = :updatedAt",
+                ExpressionAttributeValues: {
+                    ":password": hashedPassword,
+                    ":updateAt" : new Date().toISOString(),
+                },
+            })
+        )
+    } catch (error) {
+        throw new Error(`Failed to update password: ${error.message}`);
+    }
+}

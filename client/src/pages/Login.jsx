@@ -47,7 +47,7 @@ const Login = () => {
             localStorage.setItem("authToken", response.data.token);
             localStorage.setItem("user", JSON.stringify(response.data.user));
 
-            toast.success(`Welcome Back, ${response.data.user}!`);
+            toast.success(`Welcome Back, ${response.data.user.name}!`);
             navigate("/dashboard");
 
 
@@ -74,25 +74,91 @@ const Login = () => {
                     <div className='mb-8'>
                         <div className='inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 text-[11px] font-semibold uppercase tracking-widest px-3 py-1 rounded-full mb-4'>
                             <span className='w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse'/>
-                            Documentation Portal 
+                            Documentation Visa Tracker 
                         </div>
                         <h2 className='font-[Outfit] text-[28px] font-700 text-slate-900 leading-tight mb-2'>
                             Welcome Back
                         </h2>
                         <p className='text-[14px] text-slate-500 font-light leading-relaxed'>
-                            Sign in to Continue Managing Passenger Records.
+                            Sign in to Continue Managing Passenger Records...
                         </p>
                     </div>
-                    
-               
-               
+                    <Form {...form}>
+                       <form onSubmit={form.handleSubmit(onSubmit)} className='space-y-5'>
+                            {/**Email Field */}
+                            <FormField
+                                control={form.control}
+                                name="email"
+                                render={({field})=>(
+                                    <FormItem>
+                                        <FormLabel className='text-[11.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]'>
+                                            Email Address
+                                        </FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                type="email"
+                                                placeholder="name@organization.com"
+                                                className='h-12 px-4 text-[14px] text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-2xl bg-slate-50/80 focus-visible:bg-white focus-visible:border-indigo-400 focus-visible:ring-indigo-400/20 focus-visible:ring-[3px] transition-all'
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                        <FormMessage className='text-[11px]'/>
+                                    </FormItem>
+                                )}
+                            />
+
+                            {/**Password Field */}
+                            <FormField
+                                control={form.control}
+                                name="password"
+                                render={({field})=>(
+                                    <FormItem>
+                                        <div className='flex items-center justify-between mb-1'>
+                                            <FormLabel className='text-[11.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]'>
+                                                Password
+                                            </FormLabel>
+                                            <a href='#' className='text-[11.5px] text-indigo-500 font-medium hover:underline'>
+                                                Forgot password?
+                                            </a>
+                                        </div>
+                                        <FormControl>
+                                            <div className='relative'>
+                                                <Input
+                                                    type={showPassword?"text":"password"}
+                                                    placeholder="Enter your password"
+                                                    className='h-12 px-4 pr-12 text-[14px] text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-2xl bg-slate-50/80 focus-visible:border-indigo-400 focus-visible:ring-indigo-400/20 focus-visible:ring-[3px] transition-all w-full'
+                                                    {...field}
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant='ghost'
+                                                    size='icon'
+                                                    onClick={()=>setShowPassword(!showPassword)}
+                                                    className='absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-400 hover:text-indigo-500 hover:bg-transparent'
+                                                
+                                                >
+
+                                                </Button>                                    
+                                            </div>
+                                        </FormControl>
+                                        <FormMessage className='text-[11px]'/>
+                                    </FormItem>
+                                )}
+                            />
+
+                            {/**Submit Button */}
+                            <Button
+                                type='submit'
+                                disabled={isLoading}
+                                className='w-full h-12 mt-2 bg-linear-to-r from-[#19376D] to-indigo-500 text-white font-[Outfit] text-[15px] font-semibold rounded-[14px] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 active:translate-y-0 transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50'
+                             >
+                                {isLoading ? "Signing In..." : "SignIn"}
+                            </Button> 
+                        </form> 
+                    </Form>
                </div>
-
-
         </div>
-
     </div>
   )
 }
-
 export default Login

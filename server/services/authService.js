@@ -77,6 +77,37 @@ export async function verifyToken(token){
 }
 
 /**
+ * Generate a short-lived email verification token (24h)
+ * @param {object} payload - data to embed (name, email, hashedPassword, role)
+ * @returns {Promise<string>}
+ */
+export async function generateVerificationToken(payload) {
+    try {
+        const token = await new SignJWT(payload)
+            .setProtectedHeader({ alg: 'HS256' })
+            .setExpirationTime('24h')
+            .sign(JWT_SECRET);
+        return token;
+    } catch (error) {
+        throw new Error(`Verification token generation failed: ${error.message}`);
+    }
+}
+
+/**
+ * Verify and decode an email verification token
+ * @param {string} token
+ * @returns {Promise<object>}
+ */
+export async function verifyVerificationToken(token) {
+    try {
+        const { payload } = await jwtVerify(token, JWT_SECRET);
+        return payload;
+    } catch (error) {
+        throw new Error('Verification link is invalid or has expired.');
+    }
+}
+
+/**
  * Generate refresh token (valid for 30 days)
  */
 
@@ -90,5 +121,29 @@ export async function generateRefreshToken(userId){
         return token;
     } catch (error) {
         throw new Error(`Refresh token generation failed:${error.message}`)
+    }
+}
+
+export async function generatePasswordResetToken (email) {
+    try {
+        const token = await new SignJWT({email, type:'password-reset'})
+        .setProtectedHeader({alg: 'HS256'})
+        .setExpirationTime('1h')
+        .sign(JWT_SECRET)
+    } catch (error) {
+        throw new Error(`Password reset token generation failed: ${error.message}`)
+    }
+} 
+
+export async function verifyPasswordResetToken(token){
+    try {
+        const {payload} = await jwtVerify(token, JWT_SECRET);
+        if (payload.type !== 'password-reset') {
+            throw new Error('Invalid token type.');
+        }
+
+        return payload
+    } catch (error) {
+        throw new Error('Reset link is invalid or has expired.');
     }
 }

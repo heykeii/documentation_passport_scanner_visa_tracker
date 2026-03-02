@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { email } from 'zod';
+import { name } from '@cloudinary/url-gen/actions/namedTransformation';
 const Signup = () => {
     const navigate = useNavigate();
     const [showPassword, setShowPassword] = useState(false);
@@ -44,34 +46,28 @@ const Signup = () => {
     };
 
     const onSubmit = async(data) => {
-        setIsLoading(true);
-        try {
-            const response = await axios.post("http://localhost:3000/api/auth/signup", {
-                email: data.email,
-                password: data.password,
-                name: data.name,
-                role: "documentation",
+       setIsLoading(true);
 
-            });
+       try {
+        const response = await axios.post('http://localhost:3000/api/auth/signup',{
+          email: data.email,
+          password: data.password,
+          name: data.name,
+          role: "documentation",
+        });
 
-            //store token
-            localStorage.setItem("authToken", response.data.token);
-            localStorage.setItem("user", JSON.stringify(response.data.user));
+        toast.success(response.data.message || 'Signup successful! Please check your email to verify your account.');
 
-            toast.success("Account Registered Successfully!");
-            navigate("/dashboard");
+        form.reset();
 
+       } catch (error) {
+          const errorMessage = error.response?.data?.error || 'Signup Failed. Please Try Again.';
+          toast.error(errorMessage);
+       }
 
-
-
-
-        } catch (error) {
-           const errorMessage = error.response?.data?.error || "Signup Failed. Please Try Again.";
-           toast.error(errorMessage); 
-        }
-        finally{
-            setIsLoading(false);
-        }
+       finally{
+        setIsLoading(false);
+       }
     }
 
   return (
@@ -219,7 +215,7 @@ const Signup = () => {
                 <p className="text-[11.5px] font-semibold text-slate-500 uppercase tracking-[0.08em] mb-2">
                   Role
                 </p>
-                <div className="flex items-center gap-3 bg-indigo-50/80 border border-indigo-100 rounded-[12px] px-4 h-12 text-indigo-600">
+                <div className="flex items-center gap-3 bg-indigo-50/80 border border-indigo-100 rounded-2xl px-4 h-12 text-indigo-600">
                   <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-current fill-none shrink-0" strokeWidth={1.8}>
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
@@ -229,9 +225,7 @@ const Signup = () => {
                   <span className="flex-1 text-[14px] font-medium text-indigo-700">
                     Documentation Officer
                   </span>
-                  <span className="text-[10.5px] font-semibold bg-indigo-100 text-indigo-600 px-2.5 py-1 rounded-full tracking-wide">
-                    FIXED
-                  </span>
+                  
                 </div>
               </div>
 
@@ -239,7 +233,7 @@ const Signup = () => {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-12 mt-2 bg-gradient-to-r from-[#19376D] to-indigo-500 text-white font-[Outfit] text-[15px] font-semibold rounded-[14px] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 active:translate-y-0 transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                className="w-full h-12 mt-2 bg-linear-to-r from-[#19376D] to-indigo-500 text-white font-[Outfit] text-[15px] font-semibold rounded-[14px] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 active:translate-y-0 transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
               >
                 {isLoading ? "Creating Account..." : "Create Account"}
               </Button>
