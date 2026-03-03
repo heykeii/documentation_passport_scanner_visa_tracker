@@ -117,7 +117,7 @@ const Login = () => {
                                             <FormLabel className='text-[11.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]'>
                                                 Password
                                             </FormLabel>
-                                            <a href='#' className='text-[11.5px] text-indigo-500 font-medium hover:underline'>
+                                            <a href='/forgot-password' className='text-[11.5px] text-indigo-500 font-medium hover:underline cursor-pointer'>
                                                 Forgot password?
                                             </a>
                                         </div>
@@ -134,7 +134,7 @@ const Login = () => {
                                                     variant='ghost'
                                                     size='icon'
                                                     onClick={()=>setShowPassword(!showPassword)}
-                                                    className='absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-400 hover:text-indigo-500 hover:bg-transparent'
+                                                    className='absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-400 hover:text-indigo-500 hover:bg-transparent cursor-pointer'
                                                 
                                                 >
 
@@ -150,7 +150,7 @@ const Login = () => {
                             <Button
                                 type='submit'
                                 disabled={isLoading}
-                                className='w-full h-12 mt-2 bg-linear-to-r from-[#19376D] to-indigo-500 text-white font-[Outfit] text-[15px] font-semibold rounded-[14px] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 active:translate-y-0 transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50'
+                                className='w-full h-12 mt-2 bg-linear-to-r from-[#19376D] to-indigo-500 text-white font-[Outfit] text-[15px] font-semibold rounded-[14px] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 active:translate-y-0 transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50 cursor-pointer'
                              >
                                 {isLoading ? "Signing In..." : "SignIn"}
                             </Button> 

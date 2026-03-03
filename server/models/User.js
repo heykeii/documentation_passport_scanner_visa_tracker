@@ -147,10 +147,10 @@ export async function updatePassword(email, hashedPassword){
             new UpdateCommand({
                 TableName: TABLE_NAME,
                 Key: {email},
-                UpdateExpression: "SET PASSWORD = :password, updatedAt = :updatedAt",
+                UpdateExpression: "SET password = :password, updatedAt = :updatedAt",
                 ExpressionAttributeValues: {
                     ":password": hashedPassword,
-                    ":updateAt" : new Date().toISOString(),
+                    ":updatedAt" : new Date().toISOString(),
                 },
             })
         )

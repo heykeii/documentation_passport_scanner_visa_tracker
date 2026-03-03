@@ -130,6 +130,7 @@ export async function generatePasswordResetToken (email) {
         .setProtectedHeader({alg: 'HS256'})
         .setExpirationTime('1h')
         .sign(JWT_SECRET)
+        return token;
     } catch (error) {
         throw new Error(`Password reset token generation failed: ${error.message}`)
     }

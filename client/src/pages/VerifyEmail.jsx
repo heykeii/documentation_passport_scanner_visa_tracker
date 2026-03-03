@@ -90,7 +90,7 @@ const VerifyEmail = () => {
                                     </p>
 
                                     <Link to='/login'>
-                                        <Button className='w-full h-12 bg-linear-to-r from-[#19376D] to-indigo-500 hover:shadow-lg font-[Outfit] text-[14px] font-600'>
+                                        <Button className='w-full h-12 bg-linear-to-r from-[#19376D] to-indigo-500 hover:shadow-lg font-[Outfit] text-[14px] font-600 cursor-pointer'>
                                             Go to Login
                                         </Button>       
                                     </Link>
@@ -111,12 +111,12 @@ const VerifyEmail = () => {
                                 </p>
                                 <div className='flex gap-3 flex-col'>
                                     <Link to='/'>
-                                        <Button className='w-full h-12 bg-linear-to-r from-[#19376D] to-indigo-500 hover:shadow-lg font-[Outfit] text-[14px] font-600'>
+                                        <Button className='w-full h-12 bg-linear-to-r from-[#19376D] to-indigo-500 hover:shadow-lg font-[Outfit] text-[14px] font-600 cursor-pointer'>
                                             Try Again
                                         </Button>
                                     </Link>
                                     <Link to='/login'>
-                                        <Button variant='outline' className='w-full h-12 font-[Outfit] text-[14px] font-600'>
+                                        <Button variant='outline' className='w-full h-12 font-[Outfit] text-[14px] font-600 cursor-pointer'>
                                             Go to Login
                                         </Button>
                                     
