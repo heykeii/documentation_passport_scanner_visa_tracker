@@ -26,13 +26,6 @@ app.get('/api/status', (req,res)=>{
     });
 });
 
-//Error Handler
-app.use((err,req,res,next)=>{
-    res.status(500).json({
-        error: "Something is Wrong with the Server. Kindly checked it."
-    });
-});
-
 //Listening Port
 app.listen(PORT, async ()=>{
     console.log(`
@@ -57,11 +50,17 @@ app.use('/api/auth', authRoutes);
 app.use('/api/passports', passportRoutes);
 app.use('/api/pending-scans', pendingScanRoutes);
 
-
 //Protected route
 app.get('/api/protected', verifyAuth, (req,res)=>{
     res.json({
         message: `Welcome ${req.user.email}!`,
         user: req.user
+    });
+});
+
+//Error Handler (must be after all routes)
+app.use((err,req,res,next)=>{
+    res.status(500).json({
+        error: "Something is Wrong with the Server. Kindly checked it."
     });
 });

@@ -14,16 +14,39 @@ createRoot(document.getElementById('root')).render(
         <App />
         <Toaster 
           position='top-right'
+          theme='system'
+          richColors
           toastOptions={{
+            classNameFunction: () => 'sonner-toast-custom',
             style: {
-              background: '#0B2447',
-              color: '#ffffff',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '12px',
               fontFamily: 'Outfit, sans-serif',
               fontSize: '14px',
               fontWeight: '500',
-              boxShadow: '0 8px 24px rgba(11, 36, 71, 0.4)',
+              borderRadius: '12px',
+            },
+            success: {
+              style: {
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#ffffff',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                boxShadow: '0 8px 24px rgba(16, 185, 129, 0.2)',
+              },
+            },
+            error: {
+              style: {
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                color: '#ffffff',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                boxShadow: '0 8px 24px rgba(239, 68, 68, 0.2)',
+              },
+            },
+            info: {
+              style: {
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                color: '#ffffff',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                boxShadow: '0 8px 24px rgba(59, 130, 246, 0.2)',
+              },
             },
           }}
         />

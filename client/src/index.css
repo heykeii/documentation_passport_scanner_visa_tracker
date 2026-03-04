@@ -149,23 +149,59 @@
     }
 }
 
-/* ── Sonner Toast Icon Colors ── */
-[data-sonner-toast][data-type='success'] [data-icon] svg {
-  color: #10b981 !important;
-  stroke: #10b981 !important;
+/* ── Sonner Toast Styling ── */
+.sonner-toast-custom {
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  font-family: 'Outfit', sans-serif !important;
+  color: #ffffff !important;
 }
 
-[data-sonner-toast][data-type='error'] [data-icon] svg {
-  color: #ef4444 !important;
-  stroke: #ef4444 !important;
+.sonner-toast-custom [data-description] {
+  color: rgba(255, 255, 255, 0.9) !important;
+  opacity: 1 !important;
+  margin-top: 2px !important;
+  font-size: 13px !important;
 }
 
-[data-sonner-toast][data-type='warning'] [data-icon] svg {
-  color: #f59e0b !important;
-  stroke: #f59e0b !important;
+.sonner-toast-custom [data-text] {
+  color: #ffffff !important;
+  font-weight: 500 !important;
 }
 
-[data-sonner-toast][data-type='info'] [data-icon] svg {
-  color: #3b82f6 !important;
-  stroke: #3b82f6 !important;
+.sonner-toast-custom svg {
+  color: currentColor !important;
+  stroke-width: 2 !important;
+}
+
+/* Ensure light text on dark backgrounds */
+.sonner-toast-custom.light,
+.dark .sonner-toast-custom {
+  color: #ffffff !important;
+}
+
+.sonner-toast-custom.dark text,
+.sonner-toast-custom.light text {
+  fill: #ffffff !important;
+}
+
+/* ── Button and form styling for dark mode ── */
+button[style*="linear-gradient"] {
+  color: #ffffff !important;
+}
+
+/* Ensure proper contrast for Label in dark mode */
+.font-\[Outfit\].dark label,
+.dark label {
+  color: inherit;
+}
+
+/* High contrast for important text in dark mode */
+.dark .text-\[\#0B2447\] {
+  color: #ffffff !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: #A5D7E8 !important;
 }

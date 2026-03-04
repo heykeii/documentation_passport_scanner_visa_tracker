@@ -1,7 +1,5 @@
-import { success } from 'zod';
 import * as Passport from '../models/Passport.js'
 import * as PendingScan from '../models/PendingScan.js'
-import { ps } from 'zod/v4/locales';
 
 //Get all passport record
 export async function getAll(req,res){
@@ -62,7 +60,7 @@ export async function update(req,res){
         }
 
         const updated = await Passport.update(passportId, data);
-        return res.status(200).json({success:false, error: error.message});
+        return res.status(200).json({success: true, data: updated});
 
     } catch (error) {
         return res.status(500).json({success: false, error: error.message});

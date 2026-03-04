@@ -2,8 +2,8 @@
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
-    Users, ScanLine, FileCheck, Clock, ChevronRight,
-    Upload, Download, TrendingUp, Flag
+    Users, ScanLine, FileCheck, ChevronRight,
+    Upload, Download, Flag
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,20 +14,29 @@ import {
 } from '@/components/ui/table';
 
 /* ── Stat card ── */
-const StatCard = ({ icon: Icon, label, value, trend, trendLabel, accentColor, loading }) => (
-    <Card className={`border-0 border-t-[3px] bg-white dark:bg-[#0d1b35] shadow-sm rounded-xl overflow-hidden font-[Outfit]`}
-        style={{ borderTopColor: accentColor }}>
-        <CardContent className="p-5">
-            <div className="flex items-start justify-between mb-4">
-                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5 text-slate-500 dark:text-[#A5D7E8]/70" strokeWidth={1.8} />
+const StatCard = ({ icon: Icon, label, value, subtitle, accentColor, iconBg, loading }) => (
+    <Card className="border-0 bg-white dark:bg-[#0d1b35] shadow-sm hover:shadow-md transition-shadow duration-200 rounded-2xl overflow-hidden font-[Outfit] relative"
+        style={{ borderLeft: `4px solid ${accentColor}` }}>
+        {/* Decorative large ghost icon */}
+        <div className="absolute -right-3 -bottom-3 opacity-[0.04] dark:opacity-[0.06] pointer-events-none">
+            <Icon className="w-28 h-28" strokeWidth={1} />
+        </div>
+        <CardContent className="p-5 relative z-10">
+            <div className="flex items-center justify-between mb-4">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: iconBg || `${accentColor}18` }}>
+                    <Icon className="w-5 h-5" style={{ color: accentColor }} strokeWidth={2} />
                 </div>
+                <div className="w-2 h-2 rounded-full opacity-60" style={{ background: accentColor }} />
             </div>
             {loading
-                ? <Skeleton className="h-8 w-20 mb-1 bg-slate-100 dark:bg-white/10" />
-                : <p className="text-[32px] font-bold text-[#0B2447] dark:text-white font-[Outfit] leading-none mb-1">{value}</p>
+                ? <Skeleton className="h-9 w-24 mb-1.5 bg-slate-100 dark:bg-white/10" />
+                : <p className="text-[34px] font-bold text-[#0B2447] dark:text-white font-[Outfit] leading-none mb-1.5">{value}</p>
             }
-            <p className="text-[14px] text-slate-500 dark:text-[#A5D7E8]/60 font-[Outfit] mb-2">{label}</p>
+            <p className="text-[13.5px] font-medium text-slate-500 dark:text-[#A5D7E8]/60 font-[Outfit]">{label}</p>
+            {subtitle && (
+                <p className="text-[12px] text-slate-400 dark:text-[#A5D7E8]/35 font-[Outfit] mt-1.5 truncate">{subtitle}</p>
+            )}
         </CardContent>
     </Card>
 );
@@ -112,10 +121,10 @@ const DashboardHome = () => {
 
             {/* ── Stat cards ── */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-                <StatCard icon={Users}     label="Total Passengers"   value={total}    trend={false} accentColor="#576CBC" trendLabel=""      loading={loading} />
-                <StatCard icon={FileCheck} label="Records This Month"  value={active}   trend={false} accentColor="#576CBC" trendLabel=""           loading={loading} />
-                <StatCard icon={ScanLine}  label="Scan Accuracy"       value="98.4%"    trend={false} accentColor="#22c55e" trendLabel=""          loading={loading} />
-                <StatCard icon={Flag}      label="Active Tours"        value={expiring} trend={false} accentColor="#eab308" trendLabel="" loading={loading} />
+                <StatCard icon={Users}     label="Total Passengers"   value={total}    subtitle="All registered records" accentColor="#576CBC" loading={loading} />
+                <StatCard icon={FileCheck} label="Active Records"      value={active}   subtitle="Valid & non-expired"   accentColor="#19376D" loading={loading} />
+                <StatCard icon={ScanLine}  label="Scan Accuracy"       value="98.4%"    subtitle="AI-powered engine"     accentColor="#22c55e" loading={loading} />
+                <StatCard icon={Flag}      label="Expiring Soon"        value={expiring} subtitle="Within 90 days"        accentColor="#eab308" loading={loading} />
             </div>
 
             {/* ── Main two-column area ── */}

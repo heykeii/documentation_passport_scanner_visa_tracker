@@ -43,7 +43,7 @@ export async function getAllPending(){
         const result = await docClient.send(
             new ScanCommand({
                 TableName: TABLE_NAME,
-                FilterExpression: "#s = : pending",
+                FilterExpression: "#s = :pending",
                 ExpressionAttributeNames: {"#s": "status"},
                 ExpressionAttributeValues: {":pending": "pending"},
             })

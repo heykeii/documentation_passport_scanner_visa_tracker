@@ -1,4 +1,3 @@
-import { success } from 'zod';
 import * as PendingScan from '../models/PendingScan.js';
 
 export async function getAllPending(req,res){

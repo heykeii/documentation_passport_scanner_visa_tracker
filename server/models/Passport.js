@@ -35,8 +35,8 @@ export async function create (data) {
 
             //Meta
             createdBy: data.createdBy || "",
-            createdAt: data.createdAt || "",
-            updatedAt: data.updatedAt || "",
+            createdAt: timestamp,
+            updatedAt: timestamp,
            
 
         };
