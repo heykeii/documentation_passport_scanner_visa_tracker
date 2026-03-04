@@ -1,0 +1,133 @@
+﻿import React, { useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, ScanLine, FileSpreadsheet, Users, Settings, LogOut, Plane, MoreVertical } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
+
+const navMain = [
+    { to: '/dashboard',            label: 'Dashboard',         icon: LayoutDashboard, end: true },
+    { to: '/dashboard/scan',       label: 'Smart Scan',        icon: ScanLine,        badge: 'AI' },
+];
+const navData = [
+    { to: '/dashboard/management', label: 'Management',        icon: FileSpreadsheet },
+    { to: '/dashboard/records',    label: 'Passenger Records', icon: Users },
+];
+const navSystem = [
+    { to: '/dashboard/settings',   label: 'Settings',          icon: Settings },
+];
+
+const NavItem = ({ to, label, icon: Icon, badge, end }) => (
+    <NavLink
+        to={to}
+        end={end}
+        className={({ isActive }) =>
+            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-[14.5px] font-[Outfit] transition-all duration-150 cursor-pointer select-none ` +
+            (isActive
+                ? 'bg-[#19376D] text-white font-semibold'
+                : 'text-[#A5D7E8]/70 hover:bg-[#19376D]/60 hover:text-white')
+        }
+    >
+        <Icon className="w-4 h-4 shrink-0" strokeWidth={1.8} />
+        <span className="flex-1">{label}</span>
+        {badge && (
+            <Badge className="text-[10.5px] font-bold bg-[#576CBC] text-white px-1.5 py-0 rounded-md border-0 hover:bg-[#576CBC] leading-4">
+                {badge}
+            </Badge>
+        )}
+    </NavLink>
+);
+
+const SectionLabel = ({ children }) => (
+    <p className="text-[11px] font-semibold text-[#A5D7E8]/40 uppercase tracking-widest px-3 pt-5 pb-1.5 font-[Outfit]">
+        {children}
+    </p>
+);
+
+const Sidebar = ({ user }) => {
+    const navigate = useNavigate();
+    const [showUserMenu, setShowUserMenu] = useState(false);
+
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('user');
+        toast.success('Logged out successfully.');
+        navigate('/');
+    };
+
+    const initials = user?.name
+        ? user.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+        : 'U';
+
+    return (
+        <nav
+            className="w-64 h-screen shrink-0 flex flex-col overflow-hidden z-10"
+            style={{ background: '#0B2447' }}
+        >
+            {/* Logo */}
+            <div className="px-5 pt-5 pb-4 flex items-center gap-3 shrink-0">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: 'linear-gradient(135deg, #0B2447, #19376D)' }}>
+                    <Plane className="w-4.5 h-4.5 text-white" strokeWidth={2} />
+                </div>
+                <div className="font-[Outfit] leading-tight">
+                    <p className="text-[13px] font-bold text-white uppercase tracking-wide">Passenger Tracker</p>
+                    <p className="text-[13px] font-bold text-[#A5D7E8] uppercase tracking-wide">Pro</p>
+                </div>
+            </div>
+
+            <div className="mx-4 h-px bg-white/8 shrink-0" />
+
+            {/* Nav */}
+            <div className="flex-1 px-3 py-2 flex flex-col overflow-y-auto">
+                <SectionLabel>Main</SectionLabel>
+                {navMain.map(item => <NavItem key={item.to} {...item} />)}
+                <SectionLabel>Data</SectionLabel>
+                {navData.map(item => <NavItem key={item.to} {...item} />)}
+                <SectionLabel>System</SectionLabel>
+                {navSystem.map(item => <NavItem key={item.to} {...item} />)}
+            </div>
+
+            {/* Session indicator */}
+            <div className="mx-3 mb-3 bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2.5">
+                <div className="w-2 h-2 rounded-full bg-green-400 shrink-0 animate-pulse" />
+                <div>
+                    <p className="text-white text-[13.5px] font-semibold font-[Outfit] leading-tight">Session Active</p>
+                    <p className="text-[#A5D7E8]/70 text-[12.5px] font-[Outfit]">Secured with JWT token</p>
+                </div>
+            </div>
+
+            <div className="mx-4 h-px bg-white/8 shrink-0" />
+
+            {/* User row */}
+            <div className="px-3 py-3 flex items-center gap-2.5 relative">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center font-[Outfit] text-[11.5px] font-bold text-white shrink-0"
+                    style={{ background: 'linear-gradient(135deg, #0B2447, #19376D)' }}>
+                    {initials}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-semibold text-white font-[Outfit] truncate leading-tight">{user?.name || 'Staff'}</p>
+                    <p className="text-[12.5px] text-[#A5D7E8]/60 font-[Outfit]">Documentation Officer</p>
+                </div>
+                <button
+                    onClick={() => setShowUserMenu(v => !v)}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-[#A5D7E8]/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                >
+                    <MoreVertical className="w-3.5 h-3.5" strokeWidth={1.8} />
+                </button>
+                {showUserMenu && (
+                    <div className="absolute bottom-full right-3 mb-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 min-w-36 z-50">
+                        <button
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[14px] font-[Outfit] text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        >
+                            <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
+                            Sign Out
+                        </button>
+                    </div>
+                )}
+            </div>
+        </nav>
+    );
+};
+
+export default Sidebar;

@@ -4,8 +4,10 @@ import dotenv from "dotenv";
 import helmet from "helmet";
 import docClient from "./config/db.js";
 import { ListTablesCommand } from "@aws-sdk/client-dynamodb";
-import authRoutes from './routes/authRoutes.js'
+import authRoutes from './routes/authRoutes.js';
 import { verifyAuth } from "./middleware/authMiddleware.js";
+import passportRoutes from './routes/passportRoutes.js';
+import pendingScanRoutes from './routes/pendingScanRoutes.js';
 
 dotenv.config();
 
@@ -52,6 +54,8 @@ app.listen(PORT, async ()=>{
 
 //API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/passports', passportRoutes);
+app.use('/api/pending-scans', pendingScanRoutes);
 
 
 //Protected route
