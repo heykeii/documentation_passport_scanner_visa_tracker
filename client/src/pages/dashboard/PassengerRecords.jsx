@@ -34,11 +34,41 @@ const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('auth
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 /* ─── Helpers ─── */
+// Format Excel time fraction or HH:MM string to "h:MM AM/PM"
+const fmtTime = (t) => {
+    if (!t) return '';
+    const str = String(t).trim();
+    // Handle decimal fraction stored from old imports
+    const frac = parseFloat(str);
+    let hh, mm;
+    if (!isNaN(frac) && frac >= 0 && frac < 1) {
+        const totalMinutes = Math.round(frac * 24 * 60);
+        hh = Math.floor(totalMinutes / 60) % 24;
+        mm = totalMinutes % 60;
+    } else {
+        const match = str.match(/^(\d{1,2}):(\d{2})/);
+        if (!match) return str;
+        hh = parseInt(match[1], 10);
+        mm = parseInt(match[2], 10);
+    }
+    const period = hh < 12 ? 'AM' : 'PM';
+    const h12 = hh % 12 || 12;
+    return `${h12}:${String(mm).padStart(2, '0')} ${period}`;
+};
+
 const fmt = (d) => {
     if (!d) return '—';
-    const parsed = new Date(d);
-    if (isNaN(parsed)) return d;
-    return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const str = String(d).trim();
+    // Try parsing — but reject if year is outside realistic range (catches serial-as-year bugs)
+    const parsed = new Date(str);
+    if (!isNaN(parsed)) {
+        const yr = parsed.getFullYear();
+        if (yr >= 1900 && yr <= 2200) {
+            return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+    }
+    // Return raw string as-is (handles partial dates like "28/04" or unrecognised formats)
+    return str || '—';
 };
 
 const getExpiryStatus = (expiryDate) => {
@@ -598,7 +628,7 @@ const PassengerRecords = () => {
                                                 {fmt(rec.appointmentDate)}
                                                 {rec.appointmentTime && (
                                                     <span className="block text-[12px] text-slate-400 dark:text-slate-500 mt-0.5">
-                                                        {rec.appointmentTime}
+                                                        {fmtTime(rec.appointmentTime)}
                                                     </span>
                                                 )}
                                             </>

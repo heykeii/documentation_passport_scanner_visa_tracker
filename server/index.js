@@ -11,6 +11,7 @@ import pendingScanRoutes from './routes/pendingScanRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import { startCronJobs } from './services/cronService.js';
+import managementRoutes from './routes/managementRoutes.js';
 
 dotenv.config();
 
@@ -56,6 +57,7 @@ app.use('/api/passports', passportRoutes);
 app.use('/api/pending-scans', pendingScanRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/management', managementRoutes);
 
 //Protected route
 app.get('/api/protected', verifyAuth, (req,res)=>{
