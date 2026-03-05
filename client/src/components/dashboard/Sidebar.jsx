@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, ScanLine, FileSpreadsheet, Users, Settings, LogOut, Plane, MoreVertical } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import axios from 'axios';
 
 const navMain = [
     { to: '/dashboard',            label: 'Dashboard',         icon: LayoutDashboard, end: true },
@@ -47,7 +48,15 @@ const Sidebar = ({ user }) => {
     const navigate = useNavigate();
     const [showUserMenu, setShowUserMenu] = useState(false);
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        try {
+            // Call logout API so server can broadcast PASSPORT_ADDED notification
+            await axios.post('http://localhost:3000/api/auth/logout', {}, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
+            });
+        } catch {
+            // Proceed with logout even if API call fails
+        }
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
         toast.success('Logged out successfully.');

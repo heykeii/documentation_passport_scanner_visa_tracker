@@ -9,6 +9,8 @@ import { verifyAuth } from "./middleware/authMiddleware.js";
 import passportRoutes from './routes/passportRoutes.js';
 import pendingScanRoutes from './routes/pendingScanRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
+import { startCronJobs } from './services/cronService.js';
 
 dotenv.config();
 
@@ -44,6 +46,8 @@ app.listen(PORT, async ()=>{
     console.error(`📝 Error Message: ${err.message}`);
     console.log("💡 Tip: Check your .env file for correct AWS_ACCESS_KEY_ID and REGION.");
   }
+
+  startCronJobs();
 })
 
 //API Routes
@@ -51,6 +55,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/passports', passportRoutes);
 app.use('/api/pending-scans', pendingScanRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 //Protected route
 app.get('/api/protected', verifyAuth, (req,res)=>{

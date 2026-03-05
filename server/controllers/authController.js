@@ -3,6 +3,8 @@ import * as authService from '../services/authService.js';
 import * as User from '../models/User.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
 import { success } from "zod";
+import { getRecordCount, resetRecordCount } from '../services/sessionService.js';
+import { broadcastPassportAdded } from './notificationController.js';
 
 export async function signup(req,res){
     try {
@@ -192,6 +194,15 @@ export async function getCurrentUser(req, res) {
 
 export async function logout(req,res) {
     try {
+        const { email, name } = req.user;
+        const count = getRecordCount(email);
+
+        // If user added records this session, notify all other staff
+        if (count > 0) {
+            await broadcastPassportAdded(email, name || email, count);
+            resetRecordCount(email);
+        }
+
         return res.status(200).json({
             success: true,
             message: "Logout successful"

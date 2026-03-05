@@ -1,5 +1,6 @@
 import * as Passport from '../models/Passport.js'
 import * as PendingScan from '../models/PendingScan.js'
+import { incrementRecordCount } from '../services/sessionService.js';
 
 //Get all passport record
 export async function getAll(req,res){
@@ -62,6 +63,10 @@ export async function create(req,res){
         data.createdBy = req.user?.email || "unknown";
 
         const record = await Passport.create(data);
+
+        // Track records added in this session for logout notification
+        if (req.user?.email) incrementRecordCount(req.user.email);
+
         return res.status(201).json({success: true, data: record});
 
     } catch (error) {

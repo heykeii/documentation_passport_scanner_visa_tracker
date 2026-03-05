@@ -1,6 +1,7 @@
 import React from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { UserProvider } from './contexts/UserContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -15,6 +16,7 @@ import Settings from './pages/dashboard/Settings';
 const App = () => {
     return (
         <UserProvider>
+        <NotificationProvider>
             <Routes>
                 {/* Auth */}
                 <Route path='/'                element={<Login />} />
@@ -31,6 +33,7 @@ const App = () => {
                     <Route path='settings'      element={<Settings />} />
                 </Route>
             </Routes>
+        </NotificationProvider>
         </UserProvider>
     );
 };
