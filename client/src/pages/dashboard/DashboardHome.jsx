@@ -97,7 +97,7 @@ const DashboardHome = () => {
                 const res = await axios.get('http://localhost:3000/api/passports', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                setRecords(res.data.passports || []);
+                setRecords(res.data.data || []);
             } catch {
                 // silently fail on demo
             } finally {
@@ -123,8 +123,8 @@ const DashboardHome = () => {
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                 <StatCard icon={Users}     label="Total Passengers"   value={total}    subtitle="All registered records" accentColor="#576CBC" loading={loading} />
                 <StatCard icon={FileCheck} label="Active Records"      value={active}   subtitle="Valid & non-expired"   accentColor="#19376D" loading={loading} />
-                <StatCard icon={ScanLine}  label="Scan Accuracy"       value="98.4%"    subtitle="AI-powered engine"     accentColor="#22c55e" loading={loading} />
                 <StatCard icon={Flag}      label="Expiring Soon"        value={expiring} subtitle="Within 90 days"        accentColor="#eab308" loading={loading} />
+                <StatCard icon={ScanLine}  label="Expired"              value={expired}  subtitle="Need renewal"          accentColor="#ef4444" loading={loading} />
             </div>
 
             {/* ── Main two-column area ── */}

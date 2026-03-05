@@ -1,5 +1,6 @@
 import React from 'react';
 import { Route, Routes } from 'react-router-dom';
+import { UserProvider } from './contexts/UserContext';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -13,22 +14,24 @@ import Settings from './pages/dashboard/Settings';
 
 const App = () => {
     return (
-        <Routes>
-            {/* Auth */}
-            <Route path='/'                element={<Login />} />
-            <Route path='/forgot-password' element={<ForgotPassword />} />
-            <Route path='/reset-password'  element={<ResetPassword />} />
-            <Route path='/verify-email'    element={<VerifyEmail />} />
+        <UserProvider>
+            <Routes>
+                {/* Auth */}
+                <Route path='/'                element={<Login />} />
+                <Route path='/forgot-password' element={<ForgotPassword />} />
+                <Route path='/reset-password'  element={<ResetPassword />} />
+                <Route path='/verify-email'    element={<VerifyEmail />} />
 
-            {/* Dashboard — nested routes */}
-            <Route path='/dashboard' element={<DashboardLayout />}>
-                <Route index                element={<DashboardHome />} />
-                <Route path='scan'          element={<SmartScan />} />
-                <Route path='management'    element={<Management />} />
-                <Route path='records'       element={<PassengerRecords />} />
-                <Route path='settings'      element={<Settings />} />
-            </Route>
-        </Routes>
+                {/* Dashboard — nested routes */}
+                <Route path='/dashboard' element={<DashboardLayout />}>
+                    <Route index                element={<DashboardHome />} />
+                    <Route path='scan'          element={<SmartScan />} />
+                    <Route path='management'    element={<Management />} />
+                    <Route path='records'       element={<PassengerRecords />} />
+                    <Route path='settings'      element={<Settings />} />
+                </Route>
+            </Routes>
+        </UserProvider>
     );
 };
 

@@ -1,4 +1,4 @@
-import { PutCommand, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import docClient from "../config/db.js";
 import {v4 as uuidv4} from 'uuid'
 import { email } from "zod";
@@ -141,6 +141,67 @@ export async function getAllUsers(){
     }
 }
 
+/**
+ * Update user display name
+ * @param {string} email
+ * @param {string} name
+ */
+export async function updateProfile(email, name) {
+    try {
+        await docClient.send(
+            new UpdateCommand({
+                TableName: TABLE_NAME,
+                Key: { email },
+                UpdateExpression: 'SET #n = :name, updatedAt = :now',
+                ExpressionAttributeNames: { '#n': 'name' },
+                ExpressionAttributeValues: {
+                    ':name': name,
+                    ':now': new Date().toISOString(),
+                },
+            })
+        );
+    } catch (error) {
+        throw new Error(`Failed to update profile: ${error.message}`);
+    }
+}
+
+/**
+ * Copy an existing user to a new email (partition key swap)
+ * Preserves all existing fields including userId
+ * @param {object} existingUser - Full user object
+ * @param {string} newEmail
+ */
+export async function copyToNewEmail(existingUser, newEmail) {
+    try {
+        const now = new Date().toISOString();
+        await docClient.send(
+            new PutCommand({
+                TableName: TABLE_NAME,
+                Item: { ...existingUser, email: newEmail, updatedAt: now },
+            })
+        );
+    } catch (error) {
+        throw new Error(`Failed to copy user to new email: ${error.message}`);
+    }
+}
+
+/**
+ * Delete a user by email (partition key)
+ * @param {string} email
+ */
+export async function deleteByEmail(email) {
+    try {
+        await docClient.send(
+            new DeleteCommand({
+                TableName: TABLE_NAME,
+                Key: { email },
+            })
+        );
+    } catch (error) {
+        throw new Error(`Failed to delete user: ${error.message}`);
+    }
+}
+
 export async function updatePassword(email, hashedPassword){
     try {
         await docClient.send(
@@ -158,3 +219,6 @@ export async function updatePassword(email, hashedPassword){
         throw new Error(`Failed to update password: ${error.message}`);
     }
 }
+
+
+/** Update user display name */

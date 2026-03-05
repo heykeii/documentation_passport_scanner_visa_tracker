@@ -22,6 +22,9 @@ import {
     Sheet, SheetContent, SheetHeader, SheetTitle,
     SheetDescription, SheetFooter,
 } from '@/components/ui/sheet';
+import {
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 
 /* ─── Constants ─── */
 const API = 'http://localhost:3000/api';
@@ -35,7 +38,7 @@ const PASSPORT_FIELDS = {
     dateOfIssue: '', dateOfExpiry: '',
 };
 const ASSIGNMENT_FIELDS = {
-    portalRefNo: '', payment: '', agency: '',
+    portalRefNo: '', payment: 'unpaid', agency: '',
     appointmentDate: '', appointmentTime: '',
     embassy: '', departureDate: '', tourName: '',
 };
@@ -50,7 +53,7 @@ const addDays = (days) => {
 /* ─── Field Component ─── */
 const Field = ({ label, id, placeholder, value, onChange, type = 'text', required = false, error = '', icon: Icon, readOnly = false, hint }) => (
     <div className="flex flex-col gap-1.5 group">
-        <Label htmlFor={id} className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
+        <Label htmlFor={id} className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-600 dark:text-slate-300 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
             {Icon && <Icon className="w-3 h-3" strokeWidth={2} />}
             {label}
             {required && <span className="text-rose-400 normal-case tracking-normal font-bold">*</span>}
@@ -83,23 +86,32 @@ const Field = ({ label, id, placeholder, value, onChange, type = 'text', require
 );
 
 /* ─── Date Field ─── */
-const DateField = ({ label, id, value, onChange, icon: Icon, required }) => (
+const DateField = ({ label, id, value, onChange, icon: Icon, required, error }) => (
     <div className="flex flex-col gap-1 group">
-        <Label htmlFor={id} className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
+        <Label htmlFor={id} className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-600 dark:text-slate-300 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
             {Icon && <Icon className="w-3 h-3" strokeWidth={2} />}
             {label}
             {required && <span className="text-rose-400 normal-case tracking-normal font-bold">*</span>}
         </Label>
         <Input id={id} type="date" value={value} onChange={e => onChange(id, e.target.value)}
-            className="h-8 text-[13px] font-medium rounded-lg transition-all bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-800 dark:text-slate-100 focus-visible:ring-2 focus-visible:ring-[#19376D]/20 dark:focus-visible:ring-[#576CBC]/30 focus-visible:border-[#19376D]/50 dark:focus-visible:border-[#576CBC]/60 hover:border-slate-300 dark:hover:border-slate-600"
+            className={`h-8 text-[13px] font-medium rounded-lg transition-all bg-white dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 focus-visible:ring-2 hover:border-slate-300 dark:hover:border-slate-600 ${
+                error
+                    ? 'border-rose-400 focus-visible:ring-rose-300/30 focus-visible:border-rose-400'
+                    : 'border-slate-200 dark:border-slate-700/60 focus-visible:ring-[#19376D]/20 dark:focus-visible:ring-[#576CBC]/30 focus-visible:border-[#19376D]/50 dark:focus-visible:border-[#576CBC]/60'
+            }`}
         />
+        {error && (
+            <p className="flex items-center gap-1 text-[11px] text-rose-500 font-medium">
+                <AlertCircle className="w-3 h-3 shrink-0" strokeWidth={2} />{error}
+            </p>
+        )}
     </div>
 );
 
 /* ─── Time Field ─── */
 const TimeField = ({ label, id, value, onChange, icon: Icon }) => (
     <div className="flex flex-col gap-1 group">
-        <Label htmlFor={id} className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
+        <Label htmlFor={id} className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-600 dark:text-slate-300 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
             {Icon && <Icon className="w-3 h-3" strokeWidth={2} />}
             {label}
         </Label>
@@ -109,14 +121,7 @@ const TimeField = ({ label, id, value, onChange, icon: Icon }) => (
     </div>
 );
 
-const DATE_PRESETS = {
-    today:       [{ label: 'Today',  value: () => formatDate(new Date()) }],
-    future:      [{ label: 'Today', value: () => formatDate(new Date()) }, { label: '+7d', value: () => addDays(7) }, { label: '+30d', value: () => addDays(30) }],
-    appointment: [{ label: 'Tmrw',  value: () => addDays(1) }, { label: '+3d', value: () => addDays(3) }, { label: '+7d', value: () => addDays(7) }],
-};
-const TIME_PRESETS = {
-    appointment: [{ label: '8AM', value: '08:00' }, { label: '9AM', value: '09:00' }, { label: '10AM', value: '10:00' }, { label: '2PM', value: '14:00' }],
-};
+
 
 /* ─── Stat Pill ─── */
 const StatPill = ({ icon: Icon, label, value, color, loading }) => (
@@ -182,10 +187,34 @@ const SmartScan = () => {
 
     const validateForm = () => {
         const e = {};
+        // Required
         if (!form.surname.trim())        e.surname        = 'Required';
         if (!form.firstName.trim())      e.firstName      = 'Required';
         if (!form.passportNumber.trim()) e.passportNumber = 'Required';
-        else if (form.passportNumber.trim().length < 5) e.passportNumber = 'Min 5 characters';
+        else if (form.passportNumber.trim().length < 5)  e.passportNumber = 'Min 5 characters';
+        if (!form.portalRefNo.trim())    e.portalRefNo    = 'Required';
+
+        // Date of Birth must be before Date of Issue
+        if (form.dateOfBirth && form.dateOfIssue) {
+            if (new Date(form.dateOfBirth) >= new Date(form.dateOfIssue)) {
+                e.dateOfBirth = 'Must be before date of issue';
+                e.dateOfIssue = e.dateOfIssue || 'Must be after date of birth';
+            }
+        }
+        // Date of Issue must be before Date of Expiry
+        if (form.dateOfIssue && form.dateOfExpiry) {
+            if (new Date(form.dateOfIssue) >= new Date(form.dateOfExpiry)) {
+                e.dateOfIssue  = e.dateOfIssue || 'Must be before expiry date';
+                e.dateOfExpiry = 'Must be after date of issue';
+            }
+        }
+        // Appointment Date must be before Departure Date
+        if (form.appointmentDate && form.departureDate) {
+            if (new Date(form.appointmentDate) >= new Date(form.departureDate)) {
+                e.appointmentDate = 'Must be before departure date';
+                e.departureDate   = 'Must be after appointment date';
+            }
+        }
         setErrors(e); return Object.keys(e).length === 0;
     };
     const validateAssign = () => {
@@ -344,7 +373,7 @@ const SmartScan = () => {
 
                         {/* ══════════ MANUAL ENTRY TAB ══════════ */}
                         <TabsContent value="manual" className="mt-5 outline-none">
-                            <div className="grid grid-cols-[1fr_300px] gap-5 items-start">
+                            <div className="grid grid-cols-[1fr_360px] gap-5 items-start">
 
                                 {/* ── LEFT: Main Form ── */}
                                 <div className="space-y-4">
@@ -379,7 +408,7 @@ const SmartScan = () => {
                                         <div className="p-4 space-y-3">
                                             {/* Name row */}
                                             <div>
-                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-1.5">Full Name</p>
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-widest mb-1.5">Full Name</p>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     <Field label="Surname" id="surname" placeholder="e.g. DELA CRUZ"
                                                         value={form.surname} onChange={updateField} required error={errors.surname} icon={User} />
@@ -392,16 +421,16 @@ const SmartScan = () => {
 
                                             {/* Passport details */}
                                             <div>
-                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-1.5">Document Details</p>
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-widest mb-1.5">Document Details</p>
                                                 <div className="grid grid-cols-4 gap-2">
                                                     <Field label="Passport No." id="passportNumber" placeholder="A1234567"
                                                         value={form.passportNumber} onChange={updateField} required error={errors.passportNumber} icon={Hash} />
                                                     <DateField label="Date of Birth" id="dateOfBirth"
-                                                        value={form.dateOfBirth} onChange={updateField} icon={CalendarDays} />
+                                                        value={form.dateOfBirth} onChange={updateField} icon={CalendarDays} error={errors.dateOfBirth} />
                                                     <DateField label="Date of Issue" id="dateOfIssue"
-                                                        value={form.dateOfIssue} onChange={updateField} icon={CalendarDays} />
+                                                        value={form.dateOfIssue} onChange={updateField} icon={CalendarDays} error={errors.dateOfIssue} />
                                                     <DateField label="Date of Expiry" id="dateOfExpiry"
-                                                        value={form.dateOfExpiry} onChange={updateField} icon={CalendarDays} />
+                                                        value={form.dateOfExpiry} onChange={updateField} icon={CalendarDays} error={errors.dateOfExpiry} />
                                                 </div>
                                             </div>
                                         </div>
@@ -417,7 +446,7 @@ const SmartScan = () => {
                                                 </div>
                                                 <div>
                                                     <p className="text-[13.5px] font-bold text-slate-800 dark:text-slate-100 leading-tight">Assignment Details</p>
-                                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Tour, embassy & booking information</p>
+                                                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">Tour, embassy & booking information</p>
                                                 </div>
                                             </div>
                                             {/* Progress + Group Mode toggle — same line */}
@@ -457,12 +486,29 @@ const SmartScan = () => {
 
                                             {/* Booking row */}
                                             <div>
-                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-1.5">Booking</p>
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-widest mb-1.5">Booking</p>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     <Field label="Portal Ref No" id="portalRefNo" placeholder="e.g. REF-2026-001"
-                                                        value={form.portalRefNo} onChange={updateField} icon={FileText} />
-                                                    <Field label="Payment Status" id="payment" placeholder="PAID / PARTIAL / UNPAID"
-                                                        value={form.payment} onChange={updateField} icon={CreditCard} />
+                                                        value={form.portalRefNo} onChange={updateField} icon={FileText} required error={errors.portalRefNo} />
+                                                    {/* Payment Status Select */}
+                                                    <div className="flex flex-col gap-1.5 group">
+                                                        <Label className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-600 dark:text-slate-300 select-none transition-colors group-focus-within:text-[#19376D] dark:group-focus-within:text-[#A5D7E8]">
+                                                            <CreditCard className="w-3 h-3" strokeWidth={2} />Payment Status
+                                                        </Label>
+                                                        <Select
+                                                            value={form.payment || 'unpaid'}
+                                                            onValueChange={val => updateField('payment', val)}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-[13px] font-medium rounded-lg bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#19376D]/20 dark:focus:ring-[#576CBC]/30 font-[Outfit]">
+                                                                <SelectValue placeholder="Select status" />
+                                                            </SelectTrigger>
+                                                            <SelectContent className="font-[Outfit]">
+                                                                <SelectItem value="unpaid">Unpaid</SelectItem>
+                                                                <SelectItem value="partial">Partial</SelectItem>
+                                                                <SelectItem value="paid">Paid</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
                                                     <Field label="Agency" id="agency" placeholder="e.g. Ace Travel PH"
                                                         value={form.agency} onChange={updateField} icon={BriefcaseBusiness} />
                                                 </div>
@@ -470,16 +516,16 @@ const SmartScan = () => {
 
                                             {/* Appointment row */}
                                             <div>
-                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-1.5">Appointment & Travel</p>
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-widest mb-1.5">Appointment & Travel</p>
                                                 <div className="grid grid-cols-4 gap-2">
                                                     <DateField label="Appointment Date" id="appointmentDate"
-                                                        value={form.appointmentDate} onChange={updateField} icon={Calendar} />
+                                                        value={form.appointmentDate} onChange={updateField} icon={Calendar} error={errors.appointmentDate} />
                                                     <TimeField label="Appointment Time" id="appointmentTime"
                                                         value={form.appointmentTime} onChange={updateField} icon={Clock} />
                                                     <Field label="Embassy" id="embassy" placeholder="e.g. Japan Embassy"
                                                         value={form.embassy} onChange={updateField} icon={Building2} />
                                                     <DateField label="Departure Date" id="departureDate"
-                                                        value={form.departureDate} onChange={updateField} icon={Plane} />
+                                                        value={form.departureDate} onChange={updateField} icon={Plane} error={errors.departureDate} />
                                                 </div>
                                             </div>
 
@@ -498,26 +544,26 @@ const SmartScan = () => {
 
                                     {/* Preview card */}
                                     <div className="rounded-2xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 shadow-sm">
-                                        <div className="px-4 pt-4 pb-3"
+                                        <div className="px-5 pt-5 pb-4"
                                             style={{ background: 'linear-gradient(150deg, #0B2447 0%, #19376D 60%, #1e3f7a 100%)' }}>
                                             <div className="flex items-center gap-2 mb-4">
-                                                <Shield className="w-3.5 h-3.5 text-[#A5D7E8]/60" strokeWidth={2} />
-                                                <p className="text-[10px] font-bold text-[#A5D7E8]/60 uppercase tracking-widest">Passenger Preview</p>
+                                                <Shield className="w-4 h-4 text-[#A5D7E8]/60" strokeWidth={2} />
+                                                <p className="text-[11px] font-bold text-[#A5D7E8]/60 uppercase tracking-widest">Passenger Preview</p>
                                             </div>
                                             {form.surname || form.firstName ? (
                                                 <>
-                                                    <p className="text-[19px] font-bold text-white leading-tight tracking-tight">
+                                                    <p className="text-[22px] font-bold text-white leading-tight tracking-tight">
                                                         {form.surname || '—'}{form.firstName ? `, ${form.firstName}` : ''}
                                                     </p>
-                                                    {form.middleName && <p className="text-[12px] text-white/50 mt-0.5">{form.middleName}</p>}
+                                                    {form.middleName && <p className="text-[13px] text-white/50 mt-0.5">{form.middleName}</p>}
                                                 </>
                                             ) : (
-                                                <p className="text-[15px] text-white/30 italic">No name entered yet</p>
+                                                <p className="text-[17px] text-white/30 italic">No name entered yet</p>
                                             )}
                                             {form.passportNumber && (
-                                                <div className="mt-3 inline-flex items-center gap-1.5 bg-white/10 border border-white/15 rounded-lg px-2.5 py-1">
-                                                    <Hash className="w-3 h-3 text-[#A5D7E8]/70" strokeWidth={2} />
-                                                    <span className="text-[12px] font-bold text-white/80 tracking-wider">{form.passportNumber}</span>
+                                                <div className="mt-3 inline-flex items-center gap-1.5 bg-white/10 border border-white/15 rounded-lg px-3 py-1.5">
+                                                    <Hash className="w-3.5 h-3.5 text-[#A5D7E8]/70" strokeWidth={2} />
+                                                    <span className="text-[13px] font-bold text-white/80 tracking-wider">{form.passportNumber}</span>
                                                 </div>
                                             )}
                                         </div>
@@ -530,12 +576,12 @@ const SmartScan = () => {
                                                 { icon: MapPin,       label: 'Tour',              val: form.tourName      || '—' },
                                                 { icon: Plane,        label: 'Departure',         val: form.departureDate || '—' },
                                             ].map(({ icon: Ic, label, val }) => (
-                                                <div key={label} className="flex items-center justify-between px-4 py-1.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <Ic className="w-3 h-3 text-slate-400 dark:text-slate-600" strokeWidth={2} />
-                                                        <span className="text-[11.5px] text-slate-400 dark:text-slate-500">{label}</span>
+                                                <div key={label} className="flex items-center justify-between px-5 py-2.5">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <Ic className="w-3.5 h-3.5 text-slate-400 dark:text-slate-600" strokeWidth={2} />
+                                                        <span className="text-[13px] text-slate-400 dark:text-slate-500">{label}</span>
                                                     </div>
-                                                    <span className={`text-[12px] font-semibold max-w-32.5 truncate text-right ${val === '—' ? 'text-slate-300 dark:text-slate-700' : 'text-slate-700 dark:text-slate-200'}`}>{val}</span>
+                                                    <span className={`text-[13px] font-semibold max-w-36 truncate text-right ${val === '—' ? 'text-slate-300 dark:text-slate-700' : 'text-slate-700 dark:text-slate-200'}`}>{val}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -543,7 +589,7 @@ const SmartScan = () => {
 
                                     {/* Action buttons */}
                                     <div className="space-y-2">
-                                        <Button onClick={handleSave} disabled={saving} className="w-full h-9 font-bold text-[13px] rounded-xl text-white shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                                        <Button onClick={handleSave} disabled={saving} className="w-full h-11 font-bold text-[14px] rounded-xl text-white shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
                                             style={{ background: 'linear-gradient(135deg, #0B2447 0%, #19376D 60%, #576CBC 100%)' }}>
                                             {saving
                                                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" strokeWidth={2} />Saving…</>
@@ -551,26 +597,27 @@ const SmartScan = () => {
                                             }
                                         </Button>
                                         <Button variant="ghost" onClick={() => { setForm(EMPTY_FORM); setErrors({}); }}
-                                            className="w-full h-8 text-[12px] font-medium text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded-xl cursor-pointer">
+                                            className="w-full h-9 text-[13px] font-medium text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded-xl cursor-pointer">
                                             <X className="w-3.5 h-3.5 mr-1.5" strokeWidth={2} />
                                             Clear all fields
                                         </Button>
                                     </div>
 
                                     {/* Field checklist */}
-                                    <div className="bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/70 dark:border-slate-700/50 px-4 py-3 shadow-sm">
-                                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-2">Required Fields</p>
-                                        <div className="space-y-1.5">
+                                    <div className="bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/70 dark:border-slate-700/50 px-5 py-4 shadow-sm">
+                                        <p className="text-[11px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-3">Required Fields</p>
+                                        <div className="space-y-2.5">
                                             {[
                                                 { key: 'surname',        label: 'Surname' },
                                                 { key: 'firstName',      label: 'First Name' },
                                                 { key: 'passportNumber', label: 'Passport No.' },
+                                                { key: 'portalRefNo',    label: 'Portal Ref No' },
                                             ].map(({ key, label }) => (
-                                                <div key={key} className="flex items-center gap-2">
-                                                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-all ${form[key] ? 'bg-emerald-500' : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}`}>
-                                                        {form[key] && <CheckCircle2 className="w-3 h-3 text-white" strokeWidth={2.5} />}
+                                                <div key={key} className="flex items-center gap-2.5">
+                                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all ${form[key] ? 'bg-emerald-500' : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}`}>
+                                                        {form[key] && <CheckCircle2 className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />}
                                                     </div>
-                                                    <span className={`text-[12px] transition-colors ${form[key] ? 'text-slate-700 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-600'}`}>{label}</span>
+                                                    <span className={`text-[13px] transition-colors ${form[key] ? 'text-slate-700 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-600'}`}>{label}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -760,8 +807,25 @@ const SmartScan = () => {
                                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Assignment Details</p>
                                 <Field label="Portal Ref No" id="portalRefNo" placeholder="e.g. REF-2026-001"
                                     value={assignForm.portalRefNo} onChange={updateAssign} required error={assignErrors.portalRefNo} icon={FileText} />
-                                <Field label="Payment Status" id="payment" placeholder="PAID / PARTIAL / UNPAID"
-                                    value={assignForm.payment} onChange={updateAssign} icon={CreditCard} />
+                                {/* Payment Status Select */}
+                                <div className="flex flex-col gap-1.5">
+                                    <Label className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-600 select-none">
+                                        <CreditCard className="w-3 h-3" strokeWidth={2} />Payment Status
+                                    </Label>
+                                    <Select
+                                        value={assignForm.payment || 'unpaid'}
+                                        onValueChange={val => updateAssign('payment', val)}
+                                    >
+                                        <SelectTrigger className="h-8 text-[13px] font-medium rounded-lg bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#19376D]/20 dark:focus:ring-[#576CBC]/30 font-[Outfit]">
+                                            <SelectValue placeholder="Select status" />
+                                        </SelectTrigger>
+                                        <SelectContent className="font-[Outfit]">
+                                            <SelectItem value="unpaid">Unpaid</SelectItem>
+                                            <SelectItem value="partial">Partial</SelectItem>
+                                            <SelectItem value="paid">Paid</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                                 <Field label="Agency" id="agency" placeholder="e.g. Ace Travel PH"
                                     value={assignForm.agency} onChange={updateAssign} icon={BriefcaseBusiness} />
                                 <div className="grid grid-cols-2 gap-3">

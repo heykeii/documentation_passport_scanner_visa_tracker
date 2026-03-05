@@ -1,23 +1,17 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { useUser } from '@/contexts/UserContext';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 
 const DashboardLayout = () => {
     const navigate = useNavigate();
-    const [user, setUser] = useState(null);
+    const { user } = useUser();
 
     useEffect(() => {
         const token = localStorage.getItem('authToken');
         if (!token) {
             navigate('/', { replace: true });
-            return;
-        }
-        try {
-            const stored = localStorage.getItem('user');
-            if (stored) setUser(JSON.parse(stored));
-        } catch {
-            // ignore
         }
     }, [navigate]);
 
