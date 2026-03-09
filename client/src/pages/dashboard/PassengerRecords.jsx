@@ -31,7 +31,7 @@ import {
 /* ─── Constants ─── */
 const API = 'http://localhost:3000/api';
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}` });
-const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 /* ─── Helpers ─── */
 // Format Excel time fraction or HH:MM string to "h:MM AM/PM"
@@ -56,24 +56,90 @@ const fmtTime = (t) => {
     return `${h12}:${String(mm).padStart(2, '0')} ${period}`;
 };
 
+const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+const resolveMonthlyDate = (rec) => {
+    const created = rec.createdAt ? new Date(rec.createdAt) : null;
+    const createdValid = created && !isNaN(created) ? created : null;
+
+    const migrationMonth = Number.isInteger(rec.migrationMonth)
+        ? rec.migrationMonth
+        : parseInt(rec.migrationMonth, 10);
+    const migrationYear = Number.isInteger(rec.migrationYear)
+        ? rec.migrationYear
+        : parseInt(rec.migrationYear, 10);
+    const hasMigrationDate =
+        !isNaN(migrationMonth) && migrationMonth >= 0 && migrationMonth <= 11 &&
+        !isNaN(migrationYear) && migrationYear >= 1900 && migrationYear <= 2200;
+
+    const appt = rec.appointmentDate ? String(rec.appointmentDate).trim() : '';
+    if (!appt) {
+        if (hasMigrationDate) return new Date(migrationYear, migrationMonth, 1);
+        if (rec.entryMode === 'migration') return null;
+        return createdValid;
+    }
+
+    // Handle DD/MM/YYYY format
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(appt)) {
+        const [dd, mm, yyyy] = appt.split('/');
+        return new Date(parseInt(yyyy, 10), parseInt(mm, 10) - 1, parseInt(dd, 10));
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(appt)) return new Date(appt);
+
+    const partial = appt.match(/^(\d{1,2})\s+([A-Za-z]{3})$/);
+    if (partial) {
+        const m = MONTH_NAMES.indexOf(partial[2].toLowerCase());
+        if (m >= 0) {
+            if (hasMigrationDate) return new Date(migrationYear, m, parseInt(partial[1], 10));
+            if (rec.entryMode !== 'migration' && createdValid) return new Date(createdValid.getFullYear(), m, parseInt(partial[1], 10));
+        }
+    }
+
+    if (hasMigrationDate) return new Date(migrationYear, migrationMonth, 1);
+    if (rec.entryMode === 'migration') return null;
+    return createdValid;
+};
+
 const fmt = (d) => {
     if (!d) return '—';
     const str = String(d).trim();
-    // Try parsing — but reject if year is outside realistic range (catches serial-as-year bugs)
-    const parsed = new Date(str);
-    if (!isNaN(parsed)) {
-        const yr = parsed.getFullYear();
-        if (yr >= 1900 && yr <= 2200) {
-            return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    // DD/MM/YYYY (1 or 2 digit day/month) — ALWAYS treat first number as day
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+        const [dd, mm, yyyy] = str.split('/');
+        const date = new Date(parseInt(yyyy, 10), parseInt(mm, 10) - 1, parseInt(dd, 10));
+        if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
     }
-    // Return raw string as-is (handles partial dates like "28/04" or unrecognised formats)
+    
+    // If in ISO format YYYY-MM-DD, convert to Date object
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const date = new Date(str);
+        if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+    }
+    
+    // Return raw string as-is — do NOT use new Date(str) as a fallback;
+    // it parses slash dates as MM/DD which would corrupt DD/MM/YYYY values.
     return str || '—';
 };
 
 const getExpiryStatus = (expiryDate) => {
     if (!expiryDate) return 'none';
-    const diff = Math.ceil((new Date(expiryDate) - new Date()) / 86400000);
+    // Parse DD/MM/YYYY (1 or 2 digit day/month) — same strict treatment as fmt()
+    const m = String(expiryDate).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    let d;
+    if (m) {
+        d = new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+    } else {
+        // ISO YYYY-MM-DD is safe for new Date()
+        d = new Date(expiryDate);
+    }
+    if (isNaN(d.getTime())) return 'none';
+    const diff = Math.ceil((d - new Date()) / 86400000);
     if (diff < 0) return 'expired';
     if (diff <= 90) return 'expiring';
     return 'valid';
@@ -85,6 +151,36 @@ const paymentColor = (p) => {
     if (v.includes('partial')) return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
     if (v === 'unpaid') return 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
     return 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+};
+
+// Convert DD/MM/YYYY to YYYY-MM-DD for date input fields
+const toInputDate = (d) => {
+    if (!d) return '';
+    const str = String(d).trim();
+    // Already in YYYY-MM-DD format
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    // Convert from DD/MM/YYYY (1 or 2 digit day/month) to YYYY-MM-DD
+    const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) {
+        const dd = m[1].padStart(2, '0');
+        const mm = m[2].padStart(2, '0');
+        return `${m[3]}-${mm}-${dd}`;
+    }
+    return str;
+};
+
+// Convert YYYY-MM-DD to DD/MM/YYYY for submission
+const toDisplayDate = (d) => {
+    if (!d) return '';
+    const str = String(d).trim();
+    // Already in DD/MM/YYYY format (1 or 2 digit day/month)
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) return str;
+    // Convert from YYYY-MM-DD to DD/MM/YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [yyyy, mm, dd] = str.split('-');
+        return `${dd}/${mm}/${yyyy}`;
+    }
+    return str;
 };
 
 /* ─── Expiry Badge ─── */
@@ -156,6 +252,9 @@ const PassengerRecords = () => {
     const [query, setQuery]         = useState('');
     const [statusFilter, setStatus] = useState('all');
     const [payFilter, setPay]       = useState('all');
+    const [monthFilter, setMonth]   = useState('all');
+    const [yearFilter, setYear]     = useState('all');
+
 
     // Sort
     const [sortBy, setSortBy]       = useState('createdAt');
@@ -163,7 +262,7 @@ const PassengerRecords = () => {
 
     // Pagination
     const [page, setPage]           = useState(1);
-    const [pageSize, setPageSize]   = useState(10);
+    const [pageSize, setPageSize]   = useState(100);
 
     // Edit
     const [editOpen, setEditOpen]   = useState(false);
@@ -194,6 +293,9 @@ const PassengerRecords = () => {
 
     useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
+
+    const apptYears = useMemo(()=>[...new Set(records.map(r => resolveMonthlyDate(r)?.getFullYear()).filter(Boolean))].sort(), [records]);
+
     /* ─── Filter + Sort + Search ─── */
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -207,7 +309,7 @@ const PassengerRecords = () => {
                 (r.tourName       || '').toLowerCase().includes(q) ||
                 (r.embassy        || '').toLowerCase().includes(q) ||
                 (r.agency         || '').toLowerCase().includes(q) ||
-                (r.portalRefNo    || '').toLowerCase().includes(q)
+                (r.portalRefNo    || '').toLowerCase().includes(q) 
             );
         }
 
@@ -219,6 +321,16 @@ const PassengerRecords = () => {
             result = result.filter(r => (r.payment || '').toLowerCase() === payFilter);
         }
 
+        if (monthFilter !== 'all' || yearFilter !== 'all') {
+            result = result.filter(r => {
+                const d = resolveMonthlyDate(r);
+                if (!d || isNaN(d)) return false;
+                const monthOk = monthFilter === 'all' || d.getMonth() === parseInt(monthFilter, 10);
+                const yearOk = yearFilter === 'all' || d.getFullYear() === parseInt(yearFilter, 10)
+                return monthOk && yearOk;
+            })
+        }
+
         result.sort((a, b) => {
             const av = a[sortBy] || '';
             const bv = b[sortBy] || '';
@@ -227,7 +339,7 @@ const PassengerRecords = () => {
         });
 
         return result;
-    }, [records, query, statusFilter, payFilter, sortBy, sortDir]);
+    }, [records, query, statusFilter, payFilter, sortBy, sortDir, monthFilter, yearFilter]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     const paginated  = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -238,12 +350,18 @@ const PassengerRecords = () => {
         setPage(1);
     };
 
-    useEffect(() => { setPage(1); }, [query, statusFilter, payFilter, pageSize]);
+    useEffect(() => { setPage(1); }, [query, statusFilter, payFilter, pageSize, monthFilter, yearFilter]);
 
     /* ─── Edit handlers ─── */
     const openEdit = (rec) => {
         setEditRec(rec);
-        setEditForm({ ...rec, payment: (rec.payment || 'unpaid').toLowerCase().trim() });
+        // Convert dates from DD/MM/YYYY to YYYY-MM-DD for date input fields
+        const dateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'appointmentDate', 'departureDate'];
+        const formData = { ...rec, payment: (rec.payment || 'unpaid').toLowerCase().trim() };
+        dateFields.forEach(field => {
+            if (formData[field]) formData[field] = toInputDate(formData[field]);
+        });
+        setEditForm(formData);
         setEditErrors({});
         setEditOpen(true);
     };
@@ -304,9 +422,15 @@ const PassengerRecords = () => {
         }
         setSaving(true);
         try {
+            // Convert dates from YYYY-MM-DD back to DD/MM/YYYY for submission
+            const dateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'appointmentDate', 'departureDate'];
+            const dataToSubmit = { ...editForm };
+            dateFields.forEach(field => {
+                if (dataToSubmit[field]) dataToSubmit[field] = toDisplayDate(dataToSubmit[field]);
+            });
             const { data } = await axios.put(
                 `${API}/passports/${editRec.passportId}`,
-                editForm,
+                dataToSubmit,
                 { headers: authHeaders() }
             );
             setRecords(prev => prev.map(r => r.passportId === editRec.passportId ? data.data : r));
@@ -446,10 +570,39 @@ const PassengerRecords = () => {
                         </SelectContent>
                     </Select>
 
+                    {/** Month Filter */}
+                    <Select value={monthFilter} onValueChange={setMonth}>
+                        <SelectTrigger className='w-32 h-8 text-[13px] font-medium font-[Outfit] bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 rounded-lg focus:ring-2 focus:ring-[#19376D]/20'>
+                            <SelectValue placeholder="Month" />
+                        </SelectTrigger>
+
+                        <SelectContent className='font-[Outfit]'>
+                            <SelectItem value="all">All Months</SelectItem>
+                            {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+                                <SelectItem key={i} value={String(i)}>{m}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    {/**Year Filter */}
+                    <Select value={yearFilter} onValueChange={setYear}>
+                        <SelectTrigger className='w-28 h-8 text-[13px] font-medium font-[Outfit] bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 rounded-lg focus:ring-2 focus:ring-[#19376D]/20'>
+                                <SelectValue placeholder="Year"/>
+                        </SelectTrigger>
+                        <SelectContent className='font-[Outfit]'>
+                            <SelectItem value="all">All Years</SelectItem>
+                            {
+                                apptYears.map(y => (
+                                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                                ))
+                            }
+                        </SelectContent>
+                    </Select>
+
                     {/* Clear filters */}
-                    {(statusFilter !== 'all' || payFilter !== 'all' || query) && (
+                    {(statusFilter !== 'all' || payFilter !== 'all' || monthFilter!== 'all' || yearFilter !== 'all' || query) && (
                         <button
-                            onClick={() => { setQuery(''); setStatus('all'); setPay('all'); }}
+                            onClick={() => { setQuery(''); setStatus('all'); setPay('all'); setMonth('all'); setYear('all'); }}
                             className="flex items-center gap-1 text-[12px] font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors"
                         >
                             <X className="w-3 h-3" /> Clear filters
@@ -490,7 +643,7 @@ const PassengerRecords = () => {
                 <div className="overflow-x-auto">
                     <Table>
                         <TableHeader>
-                            <TableRow className="border-slate-100 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-900/40 hover:bg-slate-50/80 dark:hover:bg-slate-900/40">
+                            <TableRow className="border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 hover:bg-slate-50/80 dark:hover:bg-slate-900/40">
                                 <TableHead className="w-10 text-center text-[12px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 pl-5">#</TableHead>
                                 <TableHead className="min-w-42.5">
                                     <SortHeader label="Passenger"    field="surname"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
@@ -535,7 +688,7 @@ const PassengerRecords = () => {
                             {/* Loading state */}
                             {loading ? (
                                 Array.from({ length: 7 }).map((_, i) => (
-                                    <TableRow key={i} className="border-slate-100/70 dark:border-slate-800/40">
+                                    <TableRow key={i} className="border-slate-300 dark:border-slate-700/80">
                                         <TableCell colSpan={13} className="py-2.5 px-5">
                                             <Skeleton className="h-7 w-full rounded-lg bg-slate-100 dark:bg-slate-800/60" />
                                         </TableCell>
@@ -550,12 +703,12 @@ const PassengerRecords = () => {
                                                 <Users className="w-6 h-6 text-slate-300 dark:text-slate-600" strokeWidth={1.5} />
                                             </div>
                                             <p className="text-[14px] font-semibold text-slate-500 dark:text-slate-400">
-                                                {query || statusFilter !== 'all' || payFilter !== 'all'
+                                                {query || statusFilter !== 'all' || payFilter !== 'all' || monthFilter !== 'all' || yearFilter !== 'all'
                                                     ? 'No records match your filters'
                                                     : 'No records yet'}
                                             </p>
                                             <p className="text-[12px] text-slate-400 dark:text-slate-500">
-                                                {query || statusFilter !== 'all' || payFilter !== 'all'
+                                                {query || statusFilter !== 'all' || payFilter !== 'all' || monthFilter !== 'all' || yearFilter !== 'all'
                                                     ? 'Try adjusting your search or filters'
                                                     : 'Records saved from Smart Scan will appear here'}
                                             </p>
@@ -564,40 +717,35 @@ const PassengerRecords = () => {
                                 </TableRow>
                             ) : paginated.map((rec, idx) => (
                                 <TableRow key={rec.passportId}
-                                    className="border-slate-100/70 dark:border-slate-800/40 hover:bg-slate-50/70 dark:hover:bg-slate-800/20 transition-colors group">
+                                    className="border-slate-300 dark:border-slate-700/80 hover:bg-slate-50/70 dark:hover:bg-slate-800/20 transition-colors group align-top">
 
                                     {/* Row # */}
-                                    <TableCell className="pl-5 text-center text-[13px] font-semibold text-slate-400 dark:text-slate-500">
+                                    <TableCell className="pl-3 text-center text-[11px] font-semibold text-slate-400 dark:text-slate-500 py-1.5">
                                         {(page - 1) * pageSize + idx + 1}
                                     </TableCell>
 
                                     {/* Passenger */}
-                                    <TableCell className="py-3">
-                                        <p className="text-[15px] font-semibold text-[#0B2447] dark:text-white leading-tight whitespace-nowrap">
+                                    <TableCell className="py-1.5">
+                                        <p className="text-[12px] font-semibold text-[#0B2447] dark:text-white leading-tight whitespace-nowrap">
                                             {rec.surname}, {rec.firstName}
                                             {rec.middleName ? ` ${rec.middleName[0]}.` : ''}
                                         </p>
-                                        {rec.portalRefNo && (
-                                            <p className="text-[12px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-                                                {rec.portalRefNo}
-                                            </p>
-                                        )}
                                     </TableCell>
 
                                     {/* Passport No. */}
                                     <TableCell>
-                                        <span className="text-[14px] font-mono font-semibold text-slate-700 dark:text-slate-200 tracking-wide">
+                                        <span className="text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 tracking-wide">
                                             {rec.passportNumber || '—'}
                                         </span>
                                     </TableCell>
 
                                     {/* DOB */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
                                         {fmt(rec.dateOfBirth)}
                                     </TableCell>
 
                                     {/* Date of Issue */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
                                         {fmt(rec.dateOfIssue)}
                                     </TableCell>
 
@@ -607,43 +755,36 @@ const PassengerRecords = () => {
                                     </TableCell>
 
                                     {/* Embassy */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
                                         {rec.embassy || <span className="text-slate-300 dark:text-slate-600">—</span>}
                                     </TableCell>
 
                                     {/* Agency */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {rec.agency || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium max-w-[220px] whitespace-nowrap truncate py-1.5">
+                                        {rec.agency ? <span className="block truncate" title={rec.agency}>{rec.agency}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
                                     </TableCell>
 
                                     {/* Tour */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {rec.tourName || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium max-w-[170px] whitespace-nowrap truncate py-1.5">
+                                        {rec.tourName ? <span className="block truncate" title={rec.tourName}>{rec.tourName}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
                                     </TableCell>
 
                                     {/* Appointment */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
                                         {rec.appointmentDate ? (
-                                            <>
-                                                {fmt(rec.appointmentDate)}
-                                                {rec.appointmentTime && (
-                                                    <span className="block text-[12px] text-slate-400 dark:text-slate-500 mt-0.5">
-                                                        {fmtTime(rec.appointmentTime)}
-                                                    </span>
-                                                )}
-                                            </>
+                                            `${fmt(rec.appointmentDate)}${rec.appointmentTime ? ` • ${fmtTime(rec.appointmentTime)}` : ''}`
                                         ) : <span className="text-slate-300 dark:text-slate-600">—</span>}
                                     </TableCell>
 
                                     {/* Departure Date */}
-                                    <TableCell className="text-[14px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
                                         {fmt(rec.departureDate)}
                                     </TableCell>
 
                                     {/* Payment */}
                                     <TableCell>
                                         {rec.payment
-                                            ? <span className={`inline-block text-[12px] font-semibold px-2 py-0.5 rounded-md border capitalize ${paymentColor(rec.payment)}`}>
+                                                                                        ? <span className={`inline-block text-[10px] font-semibold px-1 py-0.5 rounded-md border capitalize ${paymentColor(rec.payment)}`}>
                                                 {rec.payment}
                                               </span>
                                             : <span className="text-slate-300 dark:text-slate-600">—</span>
@@ -651,19 +792,19 @@ const PassengerRecords = () => {
                                     </TableCell>
 
                                     {/* Actions */}
-                                    <TableCell className="text-right pr-4">
+                                    <TableCell className="text-right pr-3 py-1.5">
                                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <Button
                                                 variant="ghost" size="sm"
                                                 onClick={() => openEdit(rec)}
-                                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#19376D] hover:bg-[#19376D]/8 dark:hover:text-[#A5D7E8] dark:hover:bg-[#576CBC]/15 transition-colors"
+                                                className="h-6 w-6 p-0 rounded-lg text-slate-400 hover:text-[#19376D] hover:bg-[#19376D]/8 dark:hover:text-[#A5D7E8] dark:hover:bg-[#576CBC]/15 transition-colors"
                                             >
                                                 <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
                                             </Button>
                                             <Button
                                                 variant="ghost" size="sm"
                                                 onClick={() => openDelete(rec)}
-                                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 transition-colors"
+                                                className="h-6 w-6 p-0 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 transition-colors"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" strokeWidth={2} />
                                             </Button>

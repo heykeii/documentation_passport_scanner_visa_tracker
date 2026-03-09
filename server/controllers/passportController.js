@@ -1,6 +1,35 @@
 import * as Passport from '../models/Passport.js'
 import * as PendingScan from '../models/PendingScan.js'
 import { incrementRecordCount } from '../services/sessionService.js';
+import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat.js';
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter.js';
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore.js';
+
+dayjs.extend(customParseFormat);
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
+
+const isValidYear = (y) => Number.isInteger(y) && y >= 1900 && y <= 2200;
+const isValidMonth = (m) => Number.isInteger(m) && m >= 0 && m <= 11;
+
+function normaliseMigrationFields(data) {
+    const mode = String(data.entryMode || 'normal').toLowerCase();
+    data.entryMode = mode === 'migration' ? 'migration' : 'normal';
+
+    const monthRaw = data.migrationMonth;
+    const yearRaw = data.migrationYear;
+
+    const month = monthRaw === '' || monthRaw === null || monthRaw === undefined
+        ? null
+        : parseInt(monthRaw, 10);
+    const year = yearRaw === '' || yearRaw === null || yearRaw === undefined
+        ? null
+        : parseInt(yearRaw, 10);
+
+    data.migrationMonth = Number.isNaN(month) ? null : month;
+    data.migrationYear = Number.isNaN(year) ? null : year;
+}
 
 //Get all passport record
 export async function getAll(req,res){
@@ -30,6 +59,7 @@ export async function getById(req, res){
 export async function create(req,res){
     try {
         const data = req.body;
+        normaliseMigrationFields(data);
 
         // Required fields
         if (!data.surname || !data.firstName || !data.passportNumber) {
@@ -41,6 +71,14 @@ export async function create(req,res){
         if (!data.portalRefNo || !String(data.portalRefNo).trim()) {
             return res.status(400).json({ success:false, error: "Portal Ref No is required." });
         }
+        if (data.entryMode === 'migration') {
+            if (!isValidMonth(data.migrationMonth) || !isValidYear(data.migrationYear)) {
+                return res.status(400).json({ success:false, error: 'Migration mode requires valid month and year.' });
+            }
+        } else {
+            data.migrationMonth = null;
+            data.migrationYear = null;
+        }
 
         // Payment enum validation
         if (data.payment) data.payment = String(data.payment).toLowerCase().trim();
@@ -49,14 +87,26 @@ export async function create(req,res){
         }
 
         // Date cross-validations (only when both sides are provided)
-        if (data.dateOfBirth && data.dateOfIssue && new Date(data.dateOfBirth) >= new Date(data.dateOfIssue)) {
-            return res.status(400).json({ success:false, error: "Date of Birth must be before Date of Issue." });
+        if (data.dateOfBirth && data.dateOfIssue) {
+            const dob = dayjs(data.dateOfBirth, 'DD/MM/YYYY', true);
+            const doi = dayjs(data.dateOfIssue, 'DD/MM/YYYY', true);
+            if (dob.isValid() && doi.isValid() && dob.isSameOrAfter(doi)) {
+                return res.status(400).json({ success:false, error: "Date of Birth must be before Date of Issue." });
+            }
         }
-        if (data.dateOfIssue && data.dateOfExpiry && new Date(data.dateOfIssue) >= new Date(data.dateOfExpiry)) {
-            return res.status(400).json({ success:false, error: "Date of Issue must be before Date of Expiry." });
+        if (data.dateOfIssue && data.dateOfExpiry) {
+            const doi = dayjs(data.dateOfIssue, 'DD/MM/YYYY', true);
+            const doe = dayjs(data.dateOfExpiry, 'DD/MM/YYYY', true);
+            if (doi.isValid() && doe.isValid() && doi.isSameOrAfter(doe)) {
+                return res.status(400).json({ success:false, error: "Date of Issue must be before Date of Expiry." });
+            }
         }
-        if (data.appointmentDate && data.departureDate && new Date(data.appointmentDate) >= new Date(data.departureDate)) {
-            return res.status(400).json({ success:false, error: "Appointment Date must be before Departure Date." });
+        if (data.appointmentDate && data.departureDate) {
+            const appt = dayjs(data.appointmentDate, 'DD/MM/YYYY', true);
+            const dep = dayjs(data.departureDate, 'DD/MM/YYYY', true);
+            if (appt.isValid() && dep.isValid() && appt.isSameOrAfter(dep)) {
+                return res.status(400).json({ success:false, error: "Appointment Date must be before Departure Date." });
+            }
         }
 
         //Attach who saved this record
@@ -79,6 +129,7 @@ export async function update(req,res){
     try {
         const {passportId} = req.params;
         const data = req.body;
+        normaliseMigrationFields(data);
 
         const existing = await Passport.findById(passportId);
         if(!existing){
@@ -98,6 +149,21 @@ export async function update(req,res){
         if (data.payment && !['unpaid','partial','paid'].includes(data.payment))
             return res.status(400).json({ success:false, error: "Payment must be unpaid, partial, or paid." });
 
+        if (data.entryMode === 'migration') {
+            const existingMonth = Number.isInteger(existing.migrationMonth) ? existing.migrationMonth : parseInt(existing.migrationMonth, 10);
+            const existingYear = Number.isInteger(existing.migrationYear) ? existing.migrationYear : parseInt(existing.migrationYear, 10);
+            const monthToUse = data.migrationMonth === null ? (Number.isNaN(existingMonth) ? null : existingMonth) : data.migrationMonth;
+            const yearToUse = data.migrationYear === null ? (Number.isNaN(existingYear) ? null : existingYear) : data.migrationYear;
+            if (!isValidMonth(monthToUse) || !isValidYear(yearToUse)) {
+                return res.status(400).json({ success:false, error: 'Migration mode requires valid month and year.' });
+            }
+            data.migrationMonth = monthToUse;
+            data.migrationYear = yearToUse;
+        } else {
+            data.migrationMonth = null;
+            data.migrationYear = null;
+        }
+
         // Resolve effective dates (merge with existing for cross-field checks)
         const dob  = data.dateOfBirth    ?? existing.dateOfBirth;
         const doi  = data.dateOfIssue    ?? existing.dateOfIssue;
@@ -107,12 +173,27 @@ export async function update(req,res){
 
         // Only validate date relationships if user is updating one of those fields
         // This allows partial updates (e.g., just embassy) to succeed
-        if ((data.dateOfBirth || data.dateOfIssue) && dob && doi && new Date(dob) >= new Date(doi))
-            return res.status(400).json({ success:false, error: "Date of Birth must be before Date of Issue." });
-        if ((data.dateOfIssue || data.dateOfExpiry) && doi && doe && new Date(doi) >= new Date(doe))
-            return res.status(400).json({ success:false, error: "Date of Issue must be before Date of Expiry." });
-        if ((data.appointmentDate || data.departureDate) && appt && dep && new Date(appt) >= new Date(dep))
-            return res.status(400).json({ success:false, error: "Appointment Date must be before Departure Date." });
+        if ((data.dateOfBirth || data.dateOfIssue) && dob && doi) {
+            const dobParsed = dayjs(dob, 'DD/MM/YYYY', true);
+            const doiParsed = dayjs(doi, 'DD/MM/YYYY', true);
+            if (dobParsed.isValid() && doiParsed.isValid() && dobParsed.isSameOrAfter(doiParsed)) {
+                return res.status(400).json({ success:false, error: "Date of Birth must be before Date of Issue." });
+            }
+        }
+        if ((data.dateOfIssue || data.dateOfExpiry) && doi && doe) {
+            const doiParsed = dayjs(doi, 'DD/MM/YYYY', true);
+            const doeParsed = dayjs(doe, 'DD/MM/YYYY', true);
+            if (doiParsed.isValid() && doeParsed.isValid() && doiParsed.isSameOrAfter(doeParsed)) {
+                return res.status(400).json({ success:false, error: "Date of Issue must be before Date of Expiry." });
+            }
+        }
+        if ((data.appointmentDate || data.departureDate) && appt && dep) {
+            const apptParsed = dayjs(appt, 'DD/MM/YYYY', true);
+            const depParsed = dayjs(dep, 'DD/MM/YYYY', true);
+            if (apptParsed.isValid() && depParsed.isValid() && apptParsed.isSameOrAfter(depParsed)) {
+                return res.status(400).json({ success:false, error: "Appointment Date must be before Departure Date." });
+            }
+        }
 
         const updated = await Passport.update(passportId, data);
         return res.status(200).json({success: true, data: updated});

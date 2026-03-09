@@ -110,5 +110,4 @@ export function startCronJobs() {
         }
     });
 
-    console.log('✅ Cron jobs scheduled (daily at 8:00 AM).');
 }

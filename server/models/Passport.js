@@ -4,6 +4,12 @@ import {v4 as uuidv4} from 'uuid';
 
 const TABLE_NAME = "Passports";
 
+const parseNullableInt = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = parseInt(v, 10);
+    return Number.isNaN(n) ? null : n;
+};
+
 export async function create (data) {
     try {
         const passportId = uuidv4();
@@ -32,6 +38,9 @@ export async function create (data) {
             embassy: data.embassy || "",
             departureDate: data.departureDate || "",
             tourName: data.tourName || "",
+            entryMode: data.entryMode || "normal",
+            migrationMonth: parseNullableInt(data.migrationMonth),
+            migrationYear: parseNullableInt(data.migrationYear),
 
             //Meta
             createdBy: data.createdBy || "",
@@ -112,6 +121,9 @@ export async function update(passportId, data){
                     departureDate = :departureDate,
                     tourName = :tourName,
                     payment = :payment,
+                    entryMode = :entryMode,
+                    migrationMonth = :migrationMonth,
+                    migrationYear = :migrationYear,
                     updatedAt = :updatedAt`,
                 ExpressionAttributeValues: {
                     ":surname":         data.surname         || "",
@@ -129,6 +141,9 @@ export async function update(passportId, data){
                     ":departureDate":   data.departureDate   || "",
                     ":tourName":        data.tourName        || "",
                     ":payment":         data.payment         || "",
+                    ":entryMode":       data.entryMode       || "normal",
+                    ":migrationMonth":  parseNullableInt(data.migrationMonth),
+                    ":migrationYear":   parseNullableInt(data.migrationYear),
                     ":updatedAt":       timestamp,
                 },
                 ReturnValues: "ALL_NEW",

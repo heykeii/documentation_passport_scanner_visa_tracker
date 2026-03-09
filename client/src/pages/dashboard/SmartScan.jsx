@@ -44,6 +44,8 @@ const ASSIGNMENT_FIELDS = {
 };
 const GROUP_CLEAR_FIELDS = { ...PASSPORT_FIELDS, portalRefNo: '' };
 const EMPTY_FORM = { ...PASSPORT_FIELDS, ...ASSIGNMENT_FIELDS };
+const MONTH_OPTIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const YEAR_OPTIONS = Array.from({ length: 31 }, (_, i) => String(2010 + i));
 
 const formatDate = (date) => date.toISOString().split('T')[0];
 const addDays = (days) => {
@@ -181,6 +183,18 @@ const SmartScan = () => {
     const [assignForm, setAssignForm]     = useState(ASSIGNMENT_FIELDS);
     const [assignErrors, setAssignErrors] = useState({});
     const [importing, setImporting]       = useState(false);
+    const [migrationMode, setMigrationMode] = useState(false);
+    const [migrationMonth, setMigrationMonth] = useState('');
+    const [migrationYear, setMigrationYear] = useState('');
+
+    const migrationMeta = () => {
+        if (!migrationMode) return { entryMode: 'normal' };
+        return {
+            entryMode: 'migration',
+            migrationMonth: Number(migrationMonth),
+            migrationYear: Number(migrationYear),
+        };
+    };
 
     const updateField  = (key, val) => { setForm(f => ({ ...f, [key]: val })); if (errors[key]) setErrors(e => ({ ...e, [key]: '' })); };
     const updateAssign = (key, val) => { setAssignForm(f => ({ ...f, [key]: val })); if (assignErrors[key]) setAssignErrors(e => ({ ...e, [key]: '' })); };
@@ -249,9 +263,13 @@ const SmartScan = () => {
 
     const handleSave = async () => {
         if (!validateForm()) return;
+        if (migrationMode && (!migrationMonth || !migrationYear)) {
+            toast.error('Select migration month and year before saving in migration mode.');
+            return;
+        }
         setSaving(true);
         try {
-            await axios.post(`${API}/passports`, form, { headers: authHeaders() });
+            await axios.post(`${API}/passports`, { ...form, ...migrationMeta() }, { headers: authHeaders() });
             toast.success('Record saved!', { description: `${form.firstName} ${form.surname} added.` });
             if (groupMode) { setForm(f => ({ ...f, ...GROUP_CLEAR_FIELDS })); setErrors({}); }
             else { setForm(EMPTY_FORM); setErrors({}); }
@@ -264,9 +282,13 @@ const SmartScan = () => {
 
     const handleImport = async () => {
         if (!validateAssign()) return;
+        if (migrationMode && (!migrationMonth || !migrationYear)) {
+            toast.error('Select migration month and year before importing in migration mode.');
+            return;
+        }
         setImporting(true);
         try {
-            await axios.post(`${API}/passports`, { ...activeImport, ...assignForm }, { headers: authHeaders() });
+            await axios.post(`${API}/passports`, { ...activeImport, ...assignForm, ...migrationMeta() }, { headers: authHeaders() });
             await axios.delete(`${API}/pending-scans/${activeImport.scanId}`, { headers: authHeaders() });
             toast.success('Scan imported!', { description: `${activeImport.firstName} ${activeImport.surname} added.` });
             setImportOpen(false);
@@ -369,7 +391,49 @@ const SmartScan = () => {
                                     )}
                                 </TabsTrigger>
                             </TabsList>
+
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={migrationMode ? 'default' : 'outline'}
+                                    onClick={() => setMigrationMode(v => !v)}
+                                    className={`h-9 text-[12px] font-semibold rounded-xl ${
+                                        migrationMode
+                                            ? 'bg-[#19376D] hover:bg-[#0B2447] text-white'
+                                            : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/50'
+                                    }`}
+                                >
+                                    Migration Mode {migrationMode ? 'ON' : 'OFF'}
+                                </Button>
+
+                                <Select value={migrationMonth || 'none'} onValueChange={(v) => setMigrationMonth(v === 'none' ? '' : v)}>
+                                    <SelectTrigger className="w-28 h-9 text-[12.5px] bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-700/60 rounded-xl">
+                                        <SelectValue placeholder="Month" />
+                                    </SelectTrigger>
+                                    <SelectContent className="font-[Outfit]">
+                                        <SelectItem value="none">Month</SelectItem>
+                                        {MONTH_OPTIONS.map((m, i) => <SelectItem key={m} value={String(i)}>{m}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select value={migrationYear || 'none'} onValueChange={(v) => setMigrationYear(v === 'none' ? '' : v)}>
+                                    <SelectTrigger className="w-24 h-9 text-[12.5px] bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-700/60 rounded-xl">
+                                        <SelectValue placeholder="Year" />
+                                    </SelectTrigger>
+                                    <SelectContent className="font-[Outfit]">
+                                        <SelectItem value="none">Year</SelectItem>
+                                        {YEAR_OPTIONS.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
+
+                        {migrationMode && (!migrationMonth || !migrationYear) && (
+                            <p className="mt-2 text-[12px] text-amber-600 dark:text-amber-400 font-medium">
+                                Select month and year first. New records will be tagged as legacy migration data.
+                            </p>
+                        )}
 
                         {/* ══════════ MANUAL ENTRY TAB ══════════ */}
                         <TabsContent value="manual" className="mt-5 outline-none">

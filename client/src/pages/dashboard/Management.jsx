@@ -8,9 +8,14 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 
 const API = 'http://localhost:3000/api';
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}` });
+const MONTH_OPTIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const YEAR_OPTIONS = Array.from({ length: 31 }, (_, i) => String(2010 + i));
 
 /* ─── Section card wrapper ─── */
 const Section = ({ icon: Icon, iconColor, title, description, children }) => (
@@ -97,6 +102,9 @@ const Management = () => {
     const [selectedFile,  setSelectedFile]  = useState(null);
     const [importing,     setImporting]     = useState(false);
     const [importResult,  setImportResult]  = useState(null);
+    const [migrationMode, setMigrationMode] = useState(false);
+    const [migrationMonth, setMigrationMonth] = useState('');
+    const [migrationYear, setMigrationYear] = useState('');
 
     /* Export state */
     const [exporting, setExporting] = useState(false);
@@ -125,11 +133,20 @@ const Management = () => {
     /* ── Import ── */
     const handleImport = async () => {
         if (!selectedFile) return;
+        if (migrationMode && (!migrationMonth || !migrationYear)) {
+            toast.error('Select migration month and year first.');
+            return;
+        }
         setImporting(true);
         setImportResult(null);
         try {
             const form = new FormData();
             form.append('file', selectedFile);
+            form.append('entryMode', migrationMode ? 'migration' : 'normal');
+            if (migrationMode) {
+                form.append('migrationMonth', migrationMonth);
+                form.append('migrationYear', migrationYear);
+            }
             const { data } = await axios.post(`${API}/management/import`, form, {
                 headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
             });
@@ -269,6 +286,49 @@ const Management = () => {
                 </div>
 
                 {/* Action row */}
+                <div className="mt-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/3 px-3.5 py-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <Button
+                            type="button"
+                            variant={migrationMode ? 'default' : 'outline'}
+                            onClick={() => setMigrationMode(v => !v)}
+                            className={`h-8 text-[12px] font-semibold rounded-lg cursor-pointer ${
+                                migrationMode
+                                    ? 'bg-[#19376D] hover:bg-[#0B2447] text-white'
+                                    : 'border-slate-200 dark:border-white/15 text-slate-600 dark:text-slate-300'
+                            }`}
+                        >
+                            Migration Mode {migrationMode ? 'ON' : 'OFF'}
+                        </Button>
+
+                        <Select value={migrationMonth || 'none'} onValueChange={(v) => setMigrationMonth(v === 'none' ? '' : v)}>
+                            <SelectTrigger className="w-30 h-8 text-[12.5px] font-medium font-[Outfit] bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 rounded-lg">
+                                <SelectValue placeholder="Month" />
+                            </SelectTrigger>
+                            <SelectContent className="font-[Outfit]">
+                                <SelectItem value="none">Month</SelectItem>
+                                {MONTH_OPTIONS.map((m, i) => <SelectItem key={m} value={String(i)}>{m}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={migrationYear || 'none'} onValueChange={(v) => setMigrationYear(v === 'none' ? '' : v)}>
+                            <SelectTrigger className="w-28 h-8 text-[12.5px] font-medium font-[Outfit] bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 rounded-lg">
+                                <SelectValue placeholder="Year" />
+                            </SelectTrigger>
+                            <SelectContent className="font-[Outfit]">
+                                <SelectItem value="none">Year</SelectItem>
+                                {YEAR_OPTIONS.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+
+                        <p className="text-[11.5px] text-slate-500 dark:text-[#A5D7E8]/55">
+                            {migrationMode
+                                ? 'Imported rows are tagged with selected month/year for legacy filtering.'
+                                : 'Use migration mode only for old data with missing appointment year.'}
+                        </p>
+                    </div>
+                </div>
+
                 <div className="flex items-center gap-3 mt-4">
                     <Button
                         onClick={handleImport}
@@ -298,7 +358,7 @@ const Management = () => {
                 {/* Hint */}
                 <p className="font-[Outfit] text-[12px] text-slate-400 dark:text-[#A5D7E8]/40 mt-3 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" strokeWidth={1.8} />
-                    Columns must match the template exactly. Required: Surname, First Name, Passport Number, Portal Ref No.
+                    Columns must match the template exactly. Required: SURNAME, NAME, PPT #, PORTAL.
                 </p>
             </Section>
 
@@ -313,7 +373,7 @@ const Management = () => {
                     description="Download all records as a spreadsheet"
                 >
                     <p className="font-[Outfit] text-[13px] text-slate-500 dark:text-[#A5D7E8]/60 mb-4 leading-relaxed">
-                        Exports every passenger record in the system to a formatted <strong>.xlsx</strong> file with all 17 columns including metadata.
+                        Exports every passenger record in the system to a formatted <strong>.xlsx</strong> file matching the standard Excel format.
                     </p>
                     <Button
                         onClick={handleExport}
@@ -364,21 +424,21 @@ const Management = () => {
                 <CardContent className="px-6 py-4">
                     <div className="flex flex-wrap gap-2">
                         {[
-                            { label: 'Surname',          required: true  },
-                            { label: 'First Name',       required: true  },
-                            { label: 'Middle Name',      required: false },
-                            { label: 'Portal Ref No',    required: true  },
-                            { label: 'Payment',          required: false },
-                            { label: 'Agency',           required: false },
-                            { label: 'Date of Birth',    required: false },
-                            { label: 'Passport Number',  required: true  },
-                            { label: 'Date of Issue',    required: false },
-                            { label: 'Date of Expiry',   required: false },
-                            { label: 'Appointment Date', required: false },
-                            { label: 'Appointment Time', required: false },
-                            { label: 'Embassy',          required: false },
-                            { label: 'Departure Date',   required: false },
-                            { label: 'Tour Name',        required: false },
+                            { label: 'SURNAME',      required: true  },
+                            { label: 'NAME',         required: true  },
+                            { label: 'MIDDLE NAME',  required: false },
+                            { label: 'PORTAL',       required: true  },
+                            { label: 'PAYMENT',      required: false },
+                            { label: 'AGENCY',       required: false },
+                            { label: 'DOB',          required: false },
+                            { label: 'PPT #',        required: true  },
+                            { label: 'DOI',          required: false },
+                            { label: 'DOE',          required: false },
+                            { label: 'APPT DATE',    required: false },
+                            { label: 'TIME',         required: false },
+                            { label: 'EMBASSY',      required: false },
+                            { label: 'DEP DATE',     required: false },
+                            { label: 'TOUR NAME',    required: false },
                         ].map(({ label, required }) => (
                             <span key={label}
                                 className={`inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1 rounded-lg border font-[Outfit]
