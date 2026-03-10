@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import {
-    Users, Search, RefreshCw, Pencil, Trash2, X,
+    Users, Search, RefreshCw, Pencil, Trash2, X, Download,
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     AlertCircle, Loader2, User, Hash, Calendar, CalendarDays,
     Building2, MapPin, CreditCard, Plane, FileText,
@@ -61,6 +61,8 @@ const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct'
 const resolveMonthlyDate = (rec) => {
     const created = rec.createdAt ? new Date(rec.createdAt) : null;
     const createdValid = created && !isNaN(created) ? created : null;
+    const isMigrationEntry = String(rec.entryMode || '').toLowerCase() === 'migration';
+    const currentYear = new Date().getFullYear();
 
     const migrationMonth = Number.isInteger(rec.migrationMonth)
         ? rec.migrationMonth
@@ -73,6 +75,7 @@ const resolveMonthlyDate = (rec) => {
         !isNaN(migrationYear) && migrationYear >= 1900 && migrationYear <= 2200;
 
     const appt = rec.appointmentDate ? String(rec.appointmentDate).trim() : '';
+
     if (!appt) {
         if (hasMigrationDate) return new Date(migrationYear, migrationMonth, 1);
         if (rec.entryMode === 'migration') return null;
@@ -80,19 +83,37 @@ const resolveMonthlyDate = (rec) => {
     }
 
     // Handle DD/MM/YYYY format
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(appt)) {
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(appt)) {
         const [dd, mm, yyyy] = appt.split('/');
+        if (isMigrationEntry && hasMigrationDate) {
+            return new Date(migrationYear, migrationMonth, parseInt(dd, 10));
+        }
         return new Date(parseInt(yyyy, 10), parseInt(mm, 10) - 1, parseInt(dd, 10));
     }
 
-    if (/^\d{4}-\d{2}-\d{2}$/.test(appt)) return new Date(appt);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(appt)) {
+        if (isMigrationEntry && hasMigrationDate) {
+            return new Date(migrationYear, migrationMonth, parseInt(appt.split('-')[2], 10));
+        }
+        return new Date(appt);
+    }
+
+    // Yearless numeric appointment date (DD/MM) stays yearless in display,
+    // but joins current year (or migration year) for month/year filtering.
+    if (/^\d{1,2}\/\d{1,2}$/.test(appt)) {
+        const [dd, mm] = appt.split('/');
+        const yearForFilter = isMigrationEntry && hasMigrationDate ? migrationYear : currentYear;
+        return new Date(yearForFilter, parseInt(mm, 10) - 1, parseInt(dd, 10));
+    }
 
     const partial = appt.match(/^(\d{1,2})\s+([A-Za-z]{3})$/);
     if (partial) {
         const m = MONTH_NAMES.indexOf(partial[2].toLowerCase());
         if (m >= 0) {
-            if (hasMigrationDate) return new Date(migrationYear, m, parseInt(partial[1], 10));
-            if (rec.entryMode !== 'migration' && createdValid) return new Date(createdValid.getFullYear(), m, parseInt(partial[1], 10));
+            const yearForFilter = isMigrationEntry && hasMigrationDate
+                ? migrationYear
+                : currentYear;
+            return new Date(yearForFilter, m, parseInt(partial[1], 10));
         }
     }
 
@@ -127,6 +148,33 @@ const fmt = (d) => {
     return str || '—';
 };
 
+const fmtAppointmentDate = (d) => {
+    if (!d) return '—';
+    const str = String(d).trim();
+
+    if (/^\d{1,2}\/\d{1,2}$/.test(str)) {
+        const [dd, mm] = str.split('/');
+        const date = new Date(2000, parseInt(mm, 10) - 1, parseInt(dd, 10));
+        if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        return str;
+    }
+
+    const partial = str.match(/^(\d{1,2})\s+([A-Za-z]{3})$/);
+    if (partial) {
+        const m = MONTH_NAMES.indexOf(partial[2].toLowerCase());
+        if (m >= 0) {
+            const date = new Date(2000, m, parseInt(partial[1], 10));
+            if (!isNaN(date.getTime())) {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+        }
+    }
+
+    return fmt(str);
+};
+
 const getExpiryStatus = (expiryDate) => {
     if (!expiryDate) return 'none';
     // Parse DD/MM/YYYY (1 or 2 digit day/month) — same strict treatment as fmt()
@@ -153,32 +201,76 @@ const paymentColor = (p) => {
     return 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
 };
 
-// Convert DD/MM/YYYY to YYYY-MM-DD for date input fields
-const toInputDate = (d) => {
+// Normalize known date formats into DD/MM/YYYY for text date inputs
+const normalizeToDDMMYYYY = (d) => {
     if (!d) return '';
     const str = String(d).trim();
-    // Already in YYYY-MM-DD format
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-    // Convert from DD/MM/YYYY (1 or 2 digit day/month) to YYYY-MM-DD
-    const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) {
-        const dd = m[1].padStart(2, '0');
-        const mm = m[2].padStart(2, '0');
-        return `${m[3]}-${mm}-${dd}`;
-    }
-    return str;
-};
 
-// Convert YYYY-MM-DD to DD/MM/YYYY for submission
-const toDisplayDate = (d) => {
-    if (!d) return '';
-    const str = String(d).trim();
-    // Already in DD/MM/YYYY format (1 or 2 digit day/month)
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) return str;
+    // Already DD/MM/YYYY (1 or 2 digit day/month)
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+        const [dd, mm, yyyy] = str.split('/');
+        return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${yyyy}`;
+    }
+
     // Convert from YYYY-MM-DD to DD/MM/YYYY
     if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
         const [yyyy, mm, dd] = str.split('-');
         return `${dd}/${mm}/${yyyy}`;
+    }
+
+    // Convert from DD-MM-YYYY to DD/MM/YYYY
+    if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(str)) {
+        const [dd, mm, yyyy] = str.split('-');
+        return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${yyyy}`;
+    }
+
+    return str;
+};
+
+const parseDDMMYYYY = (d) => {
+    const str = normalizeToDDMMYYYY(d);
+    const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;
+
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    const yyyy = parseInt(m[3], 10);
+    const date = new Date(yyyy, mm - 1, dd);
+
+    if (
+        date.getFullYear() !== yyyy ||
+        date.getMonth() !== mm - 1 ||
+        date.getDate() !== dd
+    ) {
+        return null;
+    }
+
+    return date;
+};
+
+const parseDDMMNoYear = (d) => {
+    const str = String(d || '').trim();
+    const m = str.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (!m) return null;
+
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+    const test = new Date(2000, mm - 1, dd);
+    if (test.getMonth() !== mm - 1 || test.getDate() !== dd) return null;
+    return { day: dd, month: mm };
+};
+
+// Keep output format consistent for API submission
+const toDisplayDate = (d) => {
+    if (!d) return '';
+    const str = normalizeToDDMMYYYY(d);
+    const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) {
+        const dd = m[1].padStart(2, '0');
+        const mm = m[2].padStart(2, '0');
+        return `${dd}/${mm}/${m[3]}`;
     }
     return str;
 };
@@ -276,6 +368,50 @@ const PassengerRecords = () => {
     const [delTarget, setDelTarget] = useState(null);
     const [deleting, setDeleting]   = useState(false);
 
+    // Multi-select & bulk delete
+    const [selected, setSelected]           = useState(new Set());
+    const [bulkDelOpen, setBulkDelOpen]     = useState(false);
+    const [bulkDeleting, setBulkDeleting]   = useState(false);
+
+    //export
+    const [exporting, setExporting] = useState(false);
+
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const params = new URLSearchParams();
+            if(monthFilter !== 'all') params.set('month', monthFilter);
+            if (yearFilter !== 'all') params.set('year', yearFilter);
+            const qs = params.toString() ? `?${params.toString()}` : '';
+
+            const response = await axios.get(`${API}/management/export${qs}`, {
+                headers: authHeaders(),
+                responseType: 'blob',
+            });
+
+            const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+            let slug = new Date().toISOString().slice(0, 10);
+            if (monthFilter !== 'all' && yearFilter !== 'all') slug = `${MONTH_ABBR[Number(monthFilter)]}-${yearFilter}`;
+            else if (monthFilter !== 'all') slug = MONTH_ABBR[Number(monthFilter)];
+            else if (yearFilter  !== 'all') slug = yearFilter;
+
+            const url = URL.createObjectURL(new Blob([response.data]));
+            const a   = document.createElement('a');
+            a.href    = url;
+            a.download = `passenger-records-${slug}.xlsx`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast.success('Records exported successfully.');
+
+
+        } catch (error) {
+            toast.error('Export Failed.');
+        }
+        finally {
+            setExporting(false);
+        }
+    }
+
     /* ─── Fetch all records ─── */
     const fetchRecords = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
@@ -294,7 +430,23 @@ const PassengerRecords = () => {
     useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
 
-    const apptYears = useMemo(()=>[...new Set(records.map(r => resolveMonthlyDate(r)?.getFullYear()).filter(Boolean))].sort(), [records]);
+    const apptYears = useMemo(() => {
+        const yearsFromResolvedDate = records
+            .map(r => resolveMonthlyDate(r)?.getFullYear())
+            .filter(Boolean);
+
+        const yearsFromMigrationMode = records
+            .map((r) => {
+                const y = Number.isInteger(r.migrationYear)
+                    ? r.migrationYear
+                    : parseInt(r.migrationYear, 10);
+                return Number.isNaN(y) ? null : y;
+            })
+            .filter((y) => y && y >= 1900 && y <= 2200);
+
+        return [...new Set([...yearsFromResolvedDate, ...yearsFromMigrationMode])]
+            .sort((a, b) => b - a);
+    }, [records]);
 
     /* ─── Filter + Sort + Search ─── */
     const filtered = useMemo(() => {
@@ -355,11 +507,10 @@ const PassengerRecords = () => {
     /* ─── Edit handlers ─── */
     const openEdit = (rec) => {
         setEditRec(rec);
-        // Convert dates from DD/MM/YYYY to YYYY-MM-DD for date input fields
         const dateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'appointmentDate', 'departureDate'];
         const formData = { ...rec, payment: (rec.payment || 'unpaid').toLowerCase().trim() };
         dateFields.forEach(field => {
-            if (formData[field]) formData[field] = toInputDate(formData[field]);
+            if (formData[field]) formData[field] = normalizeToDDMMYYYY(formData[field]);
         });
         setEditForm(formData);
         setEditErrors({});
@@ -378,25 +529,42 @@ const PassengerRecords = () => {
         if (!editForm.passportNumber?.trim()) errs.passportNumber = 'Required';
         if (!editForm.portalRefNo?.trim())    errs.portalRefNo    = 'Required';
 
+        const strictDateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'departureDate'];
+        for (const field of strictDateFields) {
+            if (editForm[field] && !parseDDMMYYYY(editForm[field])) {
+                errs[field] = 'Use DD/MM/YYYY';
+            }
+        }
+
+        if (editForm.appointmentDate && !parseDDMMYYYY(editForm.appointmentDate) && !parseDDMMNoYear(editForm.appointmentDate)) {
+            errs.appointmentDate = 'Use DD/MM/YYYY or DD/MM';
+        }
+
+        const dob = parseDDMMYYYY(editForm.dateOfBirth);
+        const doi = parseDDMMYYYY(editForm.dateOfIssue);
+        const doe = parseDDMMYYYY(editForm.dateOfExpiry);
+        const appt = parseDDMMYYYY(editForm.appointmentDate);
+        const dep = parseDDMMYYYY(editForm.departureDate);
+
         // Date of Issue must be before Date of Expiry
-        if (editForm.dateOfIssue && editForm.dateOfExpiry) {
-            if (new Date(editForm.dateOfIssue) >= new Date(editForm.dateOfExpiry)) {
+        if (doi && doe) {
+            if (doi >= doe) {
                 errs.dateOfIssue  = 'Must be before expiry date';
                 errs.dateOfExpiry = 'Must be after issue date';
             }
         }
 
         // Date of Birth must be before Date of Issue
-        if (editForm.dateOfBirth && editForm.dateOfIssue) {
-            if (new Date(editForm.dateOfBirth) >= new Date(editForm.dateOfIssue)) {
+        if (dob && doi) {
+            if (dob >= doi) {
                 errs.dateOfBirth = 'Must be before date of issue';
                 errs.dateOfIssue = errs.dateOfIssue || 'Must be after date of birth';
             }
         }
 
         // Appointment Date must be before Departure Date
-        if (editForm.appointmentDate && editForm.departureDate) {
-            if (new Date(editForm.appointmentDate) >= new Date(editForm.departureDate)) {
+        if (appt && dep) {
+            if (appt >= dep) {
                 errs.appointmentDate = 'Must be before departure date';
                 errs.departureDate   = 'Must be after appointment date';
             }
@@ -422,7 +590,6 @@ const PassengerRecords = () => {
         }
         setSaving(true);
         try {
-            // Convert dates from YYYY-MM-DD back to DD/MM/YYYY for submission
             const dateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'appointmentDate', 'departureDate'];
             const dataToSubmit = { ...editForm };
             dateFields.forEach(field => {
@@ -460,6 +627,43 @@ const PassengerRecords = () => {
         }
     };
 
+    /* ─── Multi-select & Bulk delete handlers ─── */
+    const handleSelectAll = () => {
+        if (selected.size === paginated.length && selected.size > 0) {
+            setSelected(new Set());
+        } else {
+            setSelected(new Set(paginated.map(r => r.passportId)));
+        }
+    };
+
+    const handleSelectOne = (id) => {
+        const newSelected = new Set(selected);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
+        } else {
+            newSelected.add(id);
+        }
+        setSelected(newSelected);
+    };
+
+    const handleBulkDelete = async () => {
+        setBulkDeleting(true);
+        try {
+            const ids = Array.from(selected);
+            await Promise.all(ids.map(id => 
+                axios.delete(`${API}/passports/${id}`, { headers: authHeaders() })
+            ));
+            setRecords(prev => prev.filter(r => !selected.has(r.passportId)));
+            toast.success(`${ids.length} record${ids.length > 1 ? 's' : ''} deleted successfully.`);
+            setSelected(new Set());
+            setBulkDelOpen(false);
+        } catch {
+            toast.error('Failed to delete some records.');
+        } finally {
+            setBulkDeleting(false);
+        }
+    };
+
     /* ─── Stat counts ─── */
     const stats = useMemo(() => ({
         total:    records.length,
@@ -492,15 +696,29 @@ const PassengerRecords = () => {
                         </p>
                     </div>
                 </div>
-                <Button
-                    variant="outline" size="sm"
-                    onClick={() => fetchRecords(true)}
-                    disabled={refreshing || loading}
-                    className="flex items-center gap-2 h-9 text-[13px] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-[Outfit]"
-                >
-                    <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={2} />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline" size="sm"
+                        onClick={handleExport}
+                        disabled={exporting || loading}
+                        className="flex items-center gap-2 h-9 text-[13px] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-[Outfit]"
+                    >
+                        {exporting
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} />
+                            : <Download className="w-3.5 h-3.5" strokeWidth={2} />
+                        }
+                        {exporting ? 'Exporting…' : 'Export'}
+                    </Button>
+                    <Button
+                        variant="outline" size="sm"
+                        onClick={() => fetchRecords(true)}
+                        disabled={refreshing || loading}
+                        className="flex items-center gap-2 h-9 text-[13px] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-[Outfit]"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={2} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* ── Stat Chips ── */}
@@ -636,50 +854,133 @@ const PassengerRecords = () => {
                         {query && <> for "<span className="font-semibold text-[#19376D] dark:text-[#A5D7E8]">{query}</span>"</>}
                     </p>
                 )}
+
+                {/* Selection toolbar */}
+                {selected.size > 0 && (
+                    <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gradient-to-r from-blue-50 to-blue-25 dark:from-blue-900/20 dark:to-blue-900/10 border border-blue-200 dark:border-blue-700/30 gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-[#19376D] text-white text-[12px] font-bold">
+                                    {selected.size}
+                                </span>
+                                <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">
+                                    {selected.size === 1 ? 'record' : 'records'} selected
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline" size="sm"
+                                onClick={() => setSelected(new Set())}
+                                className="h-8 text-[12px] border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                                Clear
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={() => setBulkDelOpen(true)}
+                                className="h-8 text-[12px] font-semibold bg-rose-500 hover:bg-rose-600 dark:bg-rose-600 dark:hover:bg-rose-700 text-white"
+                            >
+                                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                                Delete Selected
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── Table ── */}
             <div className="bg-white dark:bg-[#0d1b35] border border-slate-200 dark:border-[#576CBC]/20 rounded-2xl shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-slate-100 dark:scrollbar-track-slate-800 hover:scrollbar-thumb-slate-400 dark:hover:scrollbar-thumb-slate-500">
+                    <style>{`
+                        /* Enhanced scrollbar for light and dark modes */
+                        .scrollbar-thin::-webkit-scrollbar {
+                            height: 8px;
+                            width: 8px;
+                        }
+                        .scrollbar-thin::-webkit-scrollbar-track {
+                            background: transparent;
+                        }
+                        .scrollbar-thin::-webkit-scrollbar-thumb {
+                            background-color: #cbd5e1;
+                            border-radius: 10px;
+                            border: 2px solid transparent;
+                            background-clip: content-box;
+                            transition: background-color 0.2s ease;
+                        }
+                        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+                            background-color: #94a3b8;
+                            background-clip: content-box;
+                        }
+                        .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+                            background-color: #475569;
+                            background-clip: content-box;
+                        }
+                        .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+                            background-color: #64748b;
+                            background-clip: content-box;
+                        }
+                        /* Firefox scrollbar */
+                        .scrollbar-thin {
+                            scrollbar-color: #cbd5e1 transparent;
+                            scrollbar-width: thin;
+                        }
+                        .dark .scrollbar-thin {
+                            scrollbar-color: #475569 transparent;
+                        }
+                    `}</style>
                     <Table>
                         <TableHeader>
-                            <TableRow className="border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 hover:bg-slate-50/80 dark:hover:bg-slate-900/40">
-                                <TableHead className="w-10 text-center text-[12px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 pl-5">#</TableHead>
-                                <TableHead className="min-w-42.5">
+                            <TableRow className="border-b border-slate-200 dark:border-slate-700/50 bg-gradient-to-b from-slate-50 to-slate-25 dark:from-slate-900/60 dark:to-slate-900/30 hover:from-slate-100 dark:hover:from-slate-800/70 transition-colors duration-150"
+                                style={{
+                                    backgroundImage: 'linear-gradient(to bottom, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.4))',
+                                }}>
+                                <style>{`
+                                    .dark [style*="linear-gradient"] {
+                                        background-image: linear-gradient(to bottom, rgba(15, 23, 42, 0.6), rgba(15, 23, 42, 0.3)) !important;
+                                    }
+                                `}</style>
+                                <TableHead className="w-10 text-center pl-3 py-1.5">
+                                    <input
+                                        type="checkbox"
+                                        checked={selected.size > 0 && selected.size === paginated.length && paginated.length > 0}
+                                        onChange={handleSelectAll}
+                                        className="w-4 h-4 rounded cursor-pointer accent-[#19376D]"
+                                        title={selected.size > 0 ? 'Deselect all' : 'Select all'}
+                                    />
+                                </TableHead>
+                                <TableHead className="min-w-36 py-1.5">
                                     <SortHeader label="Passenger"    field="surname"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                                 </TableHead>
-                                <TableHead className="min-w-30">
-                                    <SortHeader label="Passport No." field="passportNumber"   sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-28.75">
-                                    <SortHeader label="Date of Birth" field="dateOfBirth"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-28.75">
-                                    <SortHeader label="Date of Issue" field="dateOfIssue"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-32.5">
-                                    <SortHeader label="Expiry Date"  field="dateOfExpiry"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-35">
-                                    <SortHeader label="Embassy"      field="embassy"          sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-32.5">
-                                    <SortHeader label="Agency"       field="agency"           sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-42.5">
-                                    <SortHeader label="Tour"         field="tourName"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-32.5">
-                                    <SortHeader label="Appointment"  field="appointmentDate"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-28.75">
-                                    <SortHeader label="Departure"    field="departureDate"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                                </TableHead>
-                                <TableHead className="min-w-26.25">
+                                <TableHead className="min-w-26.25 py-1.5">
                                     <SortHeader label="Payment"      field="payment"          sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                                 </TableHead>
-                                <TableHead className="text-right pr-5 text-[11.5px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                                    Actions
+                                <TableHead className="min-w-32.5 py-1.5">
+                                    <SortHeader label="Agency"       field="agency"           sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-28.75 py-1.5">
+                                    <SortHeader label="Date of Birth" field="dateOfBirth"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-30 py-1.5">
+                                    <SortHeader label="Passport No." field="passportNumber"   sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-28.75 py-1.5">
+                                    <SortHeader label="Date of Issue" field="dateOfIssue"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-32.5 py-1.5">
+                                    <SortHeader label="Expiry Date"  field="dateOfExpiry"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-32.5 py-1.5">
+                                    <SortHeader label="Appointment"  field="appointmentDate"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-35 py-1.5">
+                                    <SortHeader label="Embassy"      field="embassy"          sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-28.75 py-1.5">
+                                    <SortHeader label="Departure"    field="departureDate"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                                </TableHead>
+                                <TableHead className="min-w-42.5 py-1.5">
+                                    <SortHeader label="Tour"         field="tourName"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                                 </TableHead>
                             </TableRow>
                         </TableHeader>
@@ -689,7 +990,7 @@ const PassengerRecords = () => {
                             {loading ? (
                                 Array.from({ length: 7 }).map((_, i) => (
                                     <TableRow key={i} className="border-slate-300 dark:border-slate-700/80">
-                                        <TableCell colSpan={13} className="py-2.5 px-5">
+                                        <TableCell colSpan={12} className="py-2.5 px-5">
                                             <Skeleton className="h-7 w-full rounded-lg bg-slate-100 dark:bg-slate-800/60" />
                                         </TableCell>
                                     </TableRow>
@@ -697,7 +998,7 @@ const PassengerRecords = () => {
                             ) : paginated.length === 0 ? (
                                 /* Empty state */
                                 <TableRow>
-                                    <TableCell colSpan={13}>
+                                    <TableCell colSpan={12}>
                                         <div className="flex flex-col items-center justify-center py-16 gap-3">
                                             <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                                                 <Users className="w-6 h-6 text-slate-300 dark:text-slate-600" strokeWidth={1.5} />
@@ -717,98 +1018,94 @@ const PassengerRecords = () => {
                                 </TableRow>
                             ) : paginated.map((rec, idx) => (
                                 <TableRow key={rec.passportId}
-                                    className="border-slate-300 dark:border-slate-700/80 hover:bg-slate-50/70 dark:hover:bg-slate-800/20 transition-colors group align-top">
+                                    onClick={() => !selected.has(rec.passportId) && openEdit(rec)}
+                                    className={`border-b border-slate-200 dark:border-slate-700/40 transition-all duration-150 ease-in-out group align-top cursor-pointer ${
+                                        selected.has(rec.passportId)
+                                            ? 'bg-blue-50/60 dark:bg-blue-900/20 hover:bg-blue-50/80 dark:hover:bg-blue-900/30'
+                                            : 'bg-white dark:bg-slate-900/20 hover:bg-slate-50/80 dark:hover:bg-slate-800/50'
+                                    }`}
+                                    style={{
+                                        boxShadow: 'inset 0 1px 0 rgba(0, 0, 0, 0.02)'
+                                    }}>
 
-                                    {/* Row # */}
-                                    <TableCell className="pl-3 text-center text-[11px] font-semibold text-slate-400 dark:text-slate-500 py-1.5">
-                                        {(page - 1) * pageSize + idx + 1}
+                                    {/* Checkbox */}
+                                    <TableCell className="pl-3 text-center py-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={selected.has(rec.passportId)}
+                                            onChange={() => handleSelectOne(rec.passportId)}
+                                            className="w-4 h-4 rounded cursor-pointer accent-[#19376D]"
+                                        />
                                     </TableCell>
 
-                                    {/* Passenger */}
-                                    <TableCell className="py-1.5">
+                                    {/* Passenger with Portal Ref No underneath */}
+                                    <TableCell className="py-1">
                                         <p className="text-[12px] font-semibold text-[#0B2447] dark:text-white leading-tight whitespace-nowrap">
                                             {rec.surname}, {rec.firstName}
                                             {rec.middleName ? ` ${rec.middleName[0]}.` : ''}
                                         </p>
-                                    </TableCell>
-
-                                    {/* Passport No. */}
-                                    <TableCell>
-                                        <span className="text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 tracking-wide">
-                                            {rec.passportNumber || '—'}
-                                        </span>
-                                    </TableCell>
-
-                                    {/* DOB */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {fmt(rec.dateOfBirth)}
-                                    </TableCell>
-
-                                    {/* Date of Issue */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {fmt(rec.dateOfIssue)}
-                                    </TableCell>
-
-                                    {/* Expiry */}
-                                    <TableCell>
-                                        <ExpiryBadge date={rec.dateOfExpiry} />
-                                    </TableCell>
-
-                                    {/* Embassy */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {rec.embassy || <span className="text-slate-300 dark:text-slate-600">—</span>}
-                                    </TableCell>
-
-                                    {/* Agency */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium max-w-[220px] whitespace-nowrap truncate py-1.5">
-                                        {rec.agency ? <span className="block truncate" title={rec.agency}>{rec.agency}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                                    </TableCell>
-
-                                    {/* Tour */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium max-w-[170px] whitespace-nowrap truncate py-1.5">
-                                        {rec.tourName ? <span className="block truncate" title={rec.tourName}>{rec.tourName}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                                    </TableCell>
-
-                                    {/* Appointment */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {rec.appointmentDate ? (
-                                            `${fmt(rec.appointmentDate)}${rec.appointmentTime ? ` • ${fmtTime(rec.appointmentTime)}` : ''}`
-                                        ) : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                                    </TableCell>
-
-                                    {/* Departure Date */}
-                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                                        {fmt(rec.departureDate)}
+                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium whitespace-nowrap">
+                                            {rec.portalRefNo || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                        </p>
                                     </TableCell>
 
                                     {/* Payment */}
-                                    <TableCell>
+                                    <TableCell className="py-1">
                                         {rec.payment
-                                                                                        ? <span className={`inline-block text-[10px] font-semibold px-1 py-0.5 rounded-md border capitalize ${paymentColor(rec.payment)}`}>
+                                            ? <span className={`inline-block text-[10px] font-semibold px-1 py-0.5 rounded-md border capitalize ${paymentColor(rec.payment)}`}>
                                                 {rec.payment}
                                               </span>
                                             : <span className="text-slate-300 dark:text-slate-600">—</span>
                                         }
                                     </TableCell>
 
-                                    {/* Actions */}
-                                    <TableCell className="text-right pr-3 py-1.5">
-                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Button
-                                                variant="ghost" size="sm"
-                                                onClick={() => openEdit(rec)}
-                                                className="h-6 w-6 p-0 rounded-lg text-slate-400 hover:text-[#19376D] hover:bg-[#19376D]/8 dark:hover:text-[#A5D7E8] dark:hover:bg-[#576CBC]/15 transition-colors"
-                                            >
-                                                <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
-                                            </Button>
-                                            <Button
-                                                variant="ghost" size="sm"
-                                                onClick={() => openDelete(rec)}
-                                                className="h-6 w-6 p-0 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 transition-colors"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" strokeWidth={2} />
-                                            </Button>
-                                        </div>
+                                    {/* Agency */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium max-w-[200px] whitespace-nowrap truncate py-1">
+                                        {rec.agency ? <span className="block truncate" title={rec.agency}>{rec.agency}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                    </TableCell>
+
+                                    {/* DOB */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap py-1">
+                                        {fmt(rec.dateOfBirth)}
+                                    </TableCell>
+
+                                    {/* Passport No. */}
+                                    <TableCell className="py-1">
+                                        <span className="text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 tracking-wider">
+                                            {rec.passportNumber || '—'}
+                                        </span>
+                                    </TableCell>
+
+                                    {/* Date of Issue */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap py-1">
+                                        {fmt(rec.dateOfIssue)}
+                                    </TableCell>
+
+                                    {/* Expiry */}
+                                    <TableCell className="py-1">
+                                        <ExpiryBadge date={rec.dateOfExpiry} />
+                                    </TableCell>
+
+                                    {/* Appointment */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap py-1">
+                                        {rec.appointmentDate ? (
+                                            `${fmtAppointmentDate(rec.appointmentDate)}${rec.appointmentTime ? ` • ${fmtTime(rec.appointmentTime)}` : ''}`
+                                        ) : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                    </TableCell>
+
+                                    {/* Embassy */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap py-1">
+                                        {rec.embassy || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                    </TableCell>
+
+                                    {/* Departure Date */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap py-1">
+                                        {fmt(rec.departureDate)}
+                                    </TableCell>
+
+                                    {/* Tour */}
+                                    <TableCell className="text-[11px] text-slate-600 dark:text-slate-300 font-medium min-w-[150px] whitespace-nowrap truncate py-1">
+                                        {rec.tourName ? <span className="block truncate" title={rec.tourName}>{rec.tourName}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -818,19 +1115,19 @@ const PassengerRecords = () => {
 
                 {/* ── Pagination bar ── */}
                 {!loading && filtered.length > 0 && (
-                    <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-100 dark:border-slate-800/60">
-                        <p className="text-[12px] text-slate-400 dark:text-slate-500 font-medium">
-                            Page {page} of {totalPages}
+                    <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200 dark:border-slate-700/50 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/30 dark:to-slate-900/20 transition-colors">
+                        <p className="text-[12.5px] font-semibold text-slate-500 dark:text-slate-400">
+                            Page <span className="text-[#0B2447] dark:text-[#A5D7E8] font-bold">{page}</span> of <span className="text-[#0B2447] dark:text-[#A5D7E8] font-bold">{totalPages}</span>
                         </p>
                         <div className="flex items-center gap-1">
                             <Button variant="ghost" size="sm"
                                 onClick={() => setPage(1)} disabled={page === 1}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30">
+                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-[#A5D7E8] hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150">
                                 <ChevronsLeft className="w-3.5 h-3.5" />
                             </Button>
                             <Button variant="ghost" size="sm"
                                 onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30">
+                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-[#A5D7E8] hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150">
                                 <ChevronLeft className="w-3.5 h-3.5" />
                             </Button>
 
@@ -843,9 +1140,9 @@ const PassengerRecords = () => {
                                 return (
                                     <Button key={p} variant="ghost" size="sm"
                                         onClick={() => setPage(p)}
-                                        className={`h-7 w-7 p-0 rounded-lg text-[12.5px] font-semibold transition-colors ${page === p
-                                            ? 'bg-[#19376D] text-white hover:bg-[#19376D]'
-                                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+                                        className={`h-7 w-7 p-0 rounded-lg text-[12.5px] font-semibold transition-all duration-150 ${page === p
+                                            ? 'bg-gradient-to-br from-[#19376D] to-[#0B2447] text-white shadow-md hover:shadow-lg'
+                                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 hover:text-slate-700 dark:hover:text-slate-200'}`}>
                                         {p}
                                     </Button>
                                 );
@@ -853,12 +1150,12 @@ const PassengerRecords = () => {
 
                             <Button variant="ghost" size="sm"
                                 onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30">
+                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-[#A5D7E8] hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150">
                                 <ChevronRight className="w-3.5 h-3.5" />
                             </Button>
                             <Button variant="ghost" size="sm"
                                 onClick={() => setPage(totalPages)} disabled={page === totalPages}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30">
+                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-[#0B2447] dark:hover:text-[#A5D7E8] hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150">
                                 <ChevronsRight className="w-3.5 h-3.5" />
                             </Button>
                         </div>
@@ -906,11 +1203,11 @@ const PassengerRecords = () => {
                             </div>
                             <div className="grid grid-cols-2 gap-3 mt-3">
                                 <EField label="Passport No."  id="passportNumber" placeholder="A1234567"  value={editForm.passportNumber} onChange={updateEditForm} icon={Hash}         required error={editErrors.passportNumber} />
-                                <EField label="Date of Birth" id="dateOfBirth"    type="date"              value={editForm.dateOfBirth}    onChange={updateEditForm} icon={CalendarDays}  error={editErrors.dateOfBirth} />
+                                <EField label="Date of Birth" id="dateOfBirth" placeholder="dd/mm/yyyy" value={editForm.dateOfBirth} onChange={updateEditForm} icon={CalendarDays} error={editErrors.dateOfBirth} />
                             </div>
                             <div className="grid grid-cols-2 gap-3 mt-3">
-                                <EField label="Date of Issue"  id="dateOfIssue"  type="date" value={editForm.dateOfIssue}  onChange={updateEditForm} icon={Calendar} error={editErrors.dateOfIssue} />
-                                <EField label="Date of Expiry" id="dateOfExpiry" type="date" value={editForm.dateOfExpiry} onChange={updateEditForm} icon={Calendar} error={editErrors.dateOfExpiry} />
+                                <EField label="Date of Issue" id="dateOfIssue" placeholder="dd/mm/yyyy" value={editForm.dateOfIssue} onChange={updateEditForm} icon={Calendar} error={editErrors.dateOfIssue} />
+                                <EField label="Date of Expiry" id="dateOfExpiry" placeholder="dd/mm/yyyy" value={editForm.dateOfExpiry} onChange={updateEditForm} icon={Calendar} error={editErrors.dateOfExpiry} />
                             </div>
                         </section>
 
@@ -956,12 +1253,12 @@ const PassengerRecords = () => {
                                 <p className="text-[11.5px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Appointment & Travel</p>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
-                                <EField label="Appointment Date" id="appointmentDate" type="date" value={editForm.appointmentDate} onChange={updateEditForm} icon={Calendar} error={editErrors.appointmentDate} />
+                                <EField label="Appointment Date" id="appointmentDate" placeholder="dd/mm/yyyy" value={editForm.appointmentDate} onChange={updateEditForm} icon={Calendar} error={editErrors.appointmentDate} />
                                 <EField label="Appointment Time" id="appointmentTime" type="time" value={editForm.appointmentTime} onChange={updateEditForm} icon={Clock} />
                             </div>
                             <div className="grid grid-cols-2 gap-3 mt-3">
                                 <EField label="Embassy"        id="embassy"       placeholder="Japan Embassy" value={editForm.embassy}       onChange={updateEditForm} icon={Building2} />
-                                <EField label="Departure Date" id="departureDate" type="date"                 value={editForm.departureDate} onChange={updateEditForm} icon={Plane} error={editErrors.departureDate} />
+                                <EField label="Departure Date" id="departureDate" placeholder="dd/mm/yyyy" value={editForm.departureDate} onChange={updateEditForm} icon={Plane} error={editErrors.departureDate} />
                             </div>
                             <div className="mt-3">
                                 <EField label="Tour Name" id="tourName" placeholder="Japan Cherry Blossom 2026 — 10D/9N" value={editForm.tourName} onChange={updateEditForm} icon={MapPin} />
@@ -1031,6 +1328,42 @@ const PassengerRecords = () => {
                             {deleting
                                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Deleting…</>
                                 : 'Yes, Delete'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* ══════════════════════════════════════════════════════
+                    BULK DELETE CONFIRMATION DIALOG
+               ══════════════════════════════════════════════════════ */}
+            <AlertDialog open={bulkDelOpen} onOpenChange={setBulkDelOpen}>
+                <AlertDialogContent className="font-[Outfit] max-w-100 border-slate-200 dark:border-slate-700/60 dark:bg-[#0B2447]">
+                    <AlertDialogHeader>
+                        <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center mb-3">
+                            <Trash2 className="w-5 h-5 text-rose-500 dark:text-rose-400" strokeWidth={1.8} />
+                        </div>
+                        <AlertDialogTitle className="text-[16px] font-bold text-[#0B2447] dark:text-white font-[Outfit]">
+                            Delete {selected.size} Record{selected.size > 1 ? 's' : ''}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-[13px] text-slate-500 dark:text-[#A5D7E8]/60 font-[Outfit] leading-relaxed">
+                            You are about to permanently delete <span className="font-semibold text-[#0B2447] dark:text-white">{selected.size} record{selected.size > 1 ? 's' : ''}</span>. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="gap-2">
+                        <AlertDialogCancel
+                            disabled={bulkDeleting}
+                            className="h-9 text-[13px] font-semibold font-[Outfit] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl"
+                        >
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleBulkDelete}
+                            disabled={bulkDeleting}
+                            className="h-9 text-[13px] font-semibold font-[Outfit] bg-rose-600 hover:bg-rose-700 text-white rounded-xl border-0"
+                        >
+                            {bulkDeleting
+                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Deleting…</>
+                                : 'Yes, Delete All'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

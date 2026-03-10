@@ -13,6 +13,13 @@ dayjs.extend(isSameOrBefore);
 const isValidYear = (y) => Number.isInteger(y) && y >= 1900 && y <= 2200;
 const isValidMonth = (m) => Number.isInteger(m) && m >= 0 && m <= 11;
 
+function normalizePaymentValue(value) {
+    if (value === undefined || value === null) return 'unpaid';
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized || normalized === '0') return 'unpaid';
+    return normalized;
+}
+
 function normaliseMigrationFields(data) {
     const mode = String(data.entryMode || 'normal').toLowerCase();
     data.entryMode = mode === 'migration' ? 'migration' : 'normal';
@@ -81,7 +88,7 @@ export async function create(req,res){
         }
 
         // Payment enum validation
-        if (data.payment) data.payment = String(data.payment).toLowerCase().trim();
+        data.payment = normalizePaymentValue(data.payment);
         if (data.payment && !['unpaid','partial','paid'].includes(data.payment)) {
             return res.status(400).json({ success:false, error: "Payment must be unpaid, partial, or paid." });
         }
@@ -144,8 +151,8 @@ export async function update(req,res){
         if (data.passportNumber !== undefined && !String(data.passportNumber).trim())
             return res.status(400).json({ success:false, error: "Passport Number is required." });
 
-        // Normalize payment to lowercase before validating
-        if (data.payment) data.payment = String(data.payment).toLowerCase().trim();
+        // Normalize payment before validating (blank/0 => unpaid)
+        data.payment = normalizePaymentValue(data.payment);
         if (data.payment && !['unpaid','partial','paid'].includes(data.payment))
             return res.status(400).json({ success:false, error: "Payment must be unpaid, partial, or paid." });
 

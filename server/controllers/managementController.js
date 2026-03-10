@@ -84,6 +84,13 @@ const DATE_FIELDS     = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'appointm
 const isValidYear = (y) => Number.isInteger(y) && y >= 1900 && y <= 2200;
 const isValidMonth = (m) => Number.isInteger(m) && m >= 0 && m <= 11;
 
+function normalizePaymentValue(value) {
+    if (value === undefined || value === null) return 'unpaid';
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized || normalized === '0') return 'unpaid';
+    return normalized;
+}
+
 function parseMigrationMode(body = {}) {
     const mode = String(body.entryMode || 'normal').toLowerCase();
     const entryMode = mode === 'migration' ? 'migration' : 'normal';
@@ -152,11 +159,11 @@ function resolveField(rawKey) {
 }
 
 // ── FIX: Always use the raw numeric serial for date columns. ─────────────────
-// cell.w (the display string) is rendered by Excel using the system locale,
-// which on most Windows machines produces M/D/YYYY (US format). Returning
-// cell.w for date columns caused "2/8/2004" to be read as Feb 8 instead of
-// Aug 2. Using the raw serial (cell.v) bypasses locale formatting entirely —
-// normaliseDate then converts it unambiguously via the Excel epoch calculation.
+// For date columns cell.w holds the display string (e.g. "2/8/2004").
+// normaliseDate always treats the first component as day (DD/MM/YYYY),
+// so "2/8/2004" → August 2, not February 8.
+// The raw serial represents the Excel-locale interpretation (often MM/DD)
+// and is only used as a fallback when there is no display text.
 function normaliseDate(value) {
     if (!value) return '';
     const str = String(value).trim();
@@ -182,12 +189,15 @@ function normaliseDate(value) {
         return str;
     }
 
-    // ── Slash-delimited — ALWAYS treat as DD/MM/YYYY, never MM/DD/YYYY ───────
-    const slashMatch = str.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{4})$/);
+    // ── Slash-delimited — ALWAYS treat as DD/MM, handles 2-digit or 4-digit year ─
+    // Excel often formats dates as M/D/YY (e.g. "6/9/13" for Sep 6, 2013).
+    const slashMatch = str.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/);
     if (slashMatch) {
         const d = parseInt(slashMatch[1], 10);
         const m = parseInt(slashMatch[2], 10);
-        const y = parseInt(slashMatch[3], 10);
+        let y = parseInt(slashMatch[3], 10);
+        // Expand 2-digit year: 00–49 → 2000–2049, 50–99 → 1950–1999
+        if (y < 100) y = y < 50 ? 2000 + y : 1900 + y;
 
         // Validate calendar correctness under DD/MM/YYYY interpretation
         if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= 2200) {
@@ -231,6 +241,105 @@ function normaliseDate(value) {
     return str;
 }
 
+function normaliseAppointmentDate(value, fallbackYear) {
+    const str = String(value || '').trim();
+    if (!str) return '';
+
+    const hasExplicitYear =
+        /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(str) ||
+        /^\d{4}-\d{2}-\d{2}$/.test(str) ||
+        /\b\d{4}\b/.test(str);
+
+    if (hasExplicitYear) return normaliseDate(str);
+
+    const noYearFormats = [
+        'D/M', 'DD/MM',
+        'D-M', 'DD-MM',
+        'D.M', 'DD.MM',
+        'D MMM', 'DD MMM',
+        'MMM D', 'MMM DD',
+        'D-MMM', 'DD-MMM',
+        'MMM-D', 'MMM-DD',
+    ];
+
+    for (const format of noYearFormats) {
+        const parsed = dayjs(str, format, true);
+        if (parsed.isValid()) {
+            const d = parsed.date();
+            const m = parsed.month() + 1;
+            return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+        }
+    }
+
+    const flexParsed = dayjs(str);
+    if (flexParsed.isValid() && !hasExplicitYear) {
+        const d = flexParsed.date();
+        const m = flexParsed.month() + 1;
+        return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+    }
+
+    return normaliseDate(str);
+}
+
+function resolveExportDate(rec) {
+    const MONTH_NAMES_EXP = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const created = rec.createdAt ? new Date(rec.createdAt) : null;
+    const createdValid = created && !isNaN(created) ? created : null;
+    const isMigrationEntry = String(rec.entryMode || '').toLowerCase() === 'migration';
+    const currentYear = new Date().getFullYear();
+
+    const migrationMonth = Number.isInteger(rec.migrationMonth)
+        ? rec.migrationMonth
+        : parseInt(rec.migrationMonth, 10);
+    const migrationYear = Number.isInteger(rec.migrationYear)
+        ? rec.migrationYear
+        : parseInt(rec.migrationYear, 10);
+    const hasMigrationDate = 
+        !isNaN(migrationMonth) && migrationMonth >= 0 && migrationMonth <= 11 &&
+        !isNaN(migrationYear) && migrationYear >= 1900 && migrationYear <= 2200;
+
+    const appt = rec.appointmentDate ? String(rec.appointmentDate).trim() : '';
+
+    if (!appt) {
+        if (hasMigrationDate) return new Date(migrationYear, migrationMonth, 1);
+        if (rec.entryMode === 'migration') return null;
+        return createdValid;
+    }
+
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(appt)) {
+        const [dd, mm, yyyy] = appt.split('/');
+        if (isMigrationEntry && hasMigrationDate) 
+            return new Date(migrationYear, migrationMonth, parseInt(dd, 10));
+        return new Date(parseInt(yyyy,10), parseInt(mm, 10) - 1, parseInt(dd, 10));
+        
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(appt)) {
+        if (isMigrationEntry && hasMigrationDate)
+            return new Date(migrationYear, migrationMonth, parseInt(appt.split('-'[2], 10)))
+        return new Date(appt);
+    }
+
+    if (/^\d{1,2}\/\d{1,2}$/.test(appt)) {
+        const [dd, mm] = appt.split('/');
+        const yearForFilter = isMigrationEntry && hasMigrationDate ? migrationYear : currentYear;
+        return new Date(yearForFilter, parseInt(mm, 10) - 1, parseInt(dd,10));
+    }
+
+    const partial = appt.match(/^(\d{1,2})\s+([A-Za-z]{3})$/);
+    if (partial) {
+        const m = MONTH_NAMES_EXP.indexOf(partial[2].toLowerCase());
+        if (m >= 0) {
+            const yearForFilter = isMigrationEntry && hasMigrationDate ? migrationYear : currentYear;
+            return new Date(yearForFilter, m, parseInt(partial[1], 10));
+        }
+    }
+    if (hasMigrationDate) return new Date(migrationYear, migrationMonth, 1);
+    if (rec.entryMode === 'migration') return null;
+    return createdValid;
+
+}
+
 export async function importExcel(req, res) {
     try {
         if (!req.file) {
@@ -249,16 +358,42 @@ export async function importExcel(req, res) {
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
 
-        // For date columns, prefer cell.w (the text the user sees in the cell,
-        // e.g. "8/4/2000") so normaliseDate can parse it STRICTLY as DD/MM/YYYY.
-        // Only fall back to the raw serial (cell.v) when cell.w is absent.
+        // For date columns we resolve the ambiguity between DD/MM and MM/DD:
+        //
+        //  • "2/26/2026" — second component 26 > 12, so it CANNOT be a month.
+        //    This is unambiguously MM/DD. Use the raw serial so normaliseDate
+        //    converts it via the epoch calculation, giving the exact date.
+        //
+        //  • "2/8/2004" — both components ≤ 12, ambiguous. The user enters dates
+        //    in DD/MM/YYYY format, so "2/8" means 2nd August, not 8th February.
+        //    Return cell.w as-is; normaliseDate will parse the first component
+        //    as day and the second as month → August 2, 2004.
+        //
+        //  • If there is no display text at all, fall back to the raw serial.
         const getCellText = (cell, isDateCol = false) => {
             if (!cell) return '';
 
             if (isDateCol) {
-                // Use the display text first — this is what the user typed/sees
-                if (typeof cell.w === 'string' && cell.w.trim()) return cell.w.trim();
-                // No display text: return raw serial so normaliseDate can convert it
+                const wStr = typeof cell.w === 'string' ? cell.w.trim() : '';
+
+                if (wStr) {
+                    // Match both 4-digit and 2-digit year slash dates (e.g. "6/9/13" or "6/9/2013")
+                    const slashParts = wStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+                    if (slashParts) {
+                        const second = parseInt(slashParts[2], 10);
+                        if (second > 12) {
+                            // Unambiguous MM/DD (e.g. "2/26/2026") — use serial for accuracy
+                            if (cell.t === 'n' && cell.v != null) return String(Math.round(cell.v));
+                        }
+                        // Ambiguous (both ≤ 12) or first > 12 — return display text;
+                        // normaliseDate will treat first component as day (DD/MM)
+                        return wStr;
+                    }
+                    // Non-slash display text ("1-May-2026", etc.) — pass through
+                    return wStr;
+                }
+
+                // No display text: use raw serial
                 if (cell.t === 'n' && cell.v != null) return String(Math.round(cell.v));
                 if (cell.v != null) return String(cell.v).trim();
                 return '';
@@ -289,7 +424,12 @@ export async function importExcel(req, res) {
             const rowObj = {};
             for (const [c, field] of colFieldMap.entries()) {
                 const ref = XLSX.utils.encode_cell({ r, c });
-                const value = getCellText(sheet[ref], dateFieldSet.has(field));
+                const cell = sheet[ref];
+                const value = getCellText(cell, dateFieldSet.has(field));
+                // Debug: trace raw cell data for date columns
+                if (dateFieldSet.has(field) && cell) {
+                    console.log(`[DATE DEBUG] row=${r} field=${field} | t=${cell.t} | v=${cell.v} | w=${cell.w} | → "${value}"`);
+                }
                 if (value) rowObj[field] = value;
             }
             rows.push(rowObj);
@@ -325,9 +465,18 @@ export async function importExcel(req, res) {
             data.migrationMonth = migrationMeta.entryMode === 'migration' ? migrationMeta.migrationMonth : null;
             data.migrationYear  = migrationMeta.entryMode === 'migration' ? migrationMeta.migrationYear  : null;
 
+            const appointmentFallbackYear = migrationMeta.entryMode === 'migration'
+                ? migrationMeta.migrationYear
+                : new Date().getFullYear();
+
             // Normalise date fields
             for (const f of DATE_FIELDS) {
-                if (data[f]) data[f] = normaliseDate(data[f]);
+                if (!data[f]) continue;
+                if (f === 'appointmentDate') {
+                    data[f] = normaliseAppointmentDate(data[f], appointmentFallbackYear);
+                    continue;
+                }
+                data[f] = normaliseDate(data[f]);
             }
             // Normalise time field
             if (data.appointmentTime) data.appointmentTime = normaliseTime(data.appointmentTime);
@@ -339,7 +488,7 @@ export async function importExcel(req, res) {
                 continue;
             }
 
-            if (data.payment) data.payment = data.payment.toLowerCase();
+            data.payment = normalizePaymentValue(data.payment);
             if (data.payment && !PAYMENT_VALUES.includes(data.payment)) {
                 skipped.push({ row: rowNum, reason: `Invalid payment value "${data.payment}". Must be unpaid, partial, or paid.` });
                 continue;
@@ -394,90 +543,125 @@ export async function importExcel(req, res) {
 
 
 export async function exportExcel(req, res) {
-    try {
-        const records = await Passport.getAll();
+   try {
+    let records = await Passport.getAll();
 
-        // Dates are already stored as DD/MM/YYYY — return as-is
-        const fmtDate = (d) => (!d ? '' : String(d));
+    const rawMonth = req.query.month;
+    const rawYear = req.query.year;
+    const filterMonth = (rawMonth !== undefined && rawMonth !== '') ? parseInt(rawMonth, 10) : null;
+    const filterYear  = (rawYear  !== undefined && rawYear  !== '') ? parseInt(rawYear,  10) : null;
 
-        // Convert HH:MM (24-hr) → "H:MM AM/PM" for export
-        const fmtTime = (t) => {
-            if (!t) return '';
-            const m = String(t).match(/^(\d{1,2}):(\d{2})/);
-            if (!m) return String(t);
-            const hh = parseInt(m[1], 10), mm = m[2];
-            const period = hh < 12 ? 'AM' : 'PM';
-            return `${hh % 12 || 12}:${mm} ${period}`;
-        };
+    const hasMonthFilter = filterMonth !== null && !isNaN(filterMonth) && filterMonth >= 0 && filterMonth <= 11;
+    const hasYearFilter = filterYear !== null && !isNaN(filterYear) && filterYear >= 1900 && filterYear <= 2200;
 
-        const headers = [
-            '#', 'SURNAME', 'NAME', 'MIDDLE NAME', 'PORTAL', 'PAYMENT', 'AGENCY',
-            'DOB', 'PPT #', 'DOI', 'DOE', 'APPT DATE', 'TIME', 'EMBASSY', 'DEP DATE', 'TOUR NAME',
-        ];
+    if (hasMonthFilter || hasYearFilter) {
+        records = records.filter(rec => {
+            const d = resolveExportDate(rec);
+            if (!d || isNaN(d)) return false;
+            const monthOk =!hasMonthFilter || d.getMonth() === filterMonth;
+            const yearOk = !hasYearFilter || d.getFullYear() === filterYear;
+            return monthOk && yearOk;
+        });
+    }
 
-        const rows = records.map((r, i) => ([
-            i + 1,
-            r.surname        || '',
-            r.firstName      || '',
-            r.middleName     || '',
-            r.portalRefNo    || '',
-            r.payment        || '',
-            r.agency         || '',
-            fmtDate(r.dateOfBirth),
-            r.passportNumber || '',
-            fmtDate(r.dateOfIssue),
-            fmtDate(r.dateOfExpiry),
-            fmtDate(r.appointmentDate),
-            fmtTime(r.appointmentTime),
-            r.embassy        || '',
-            fmtDate(r.departureDate),
-            r.tourName       || '',
-        ]));
+    const fmtDate = (d) => (!d ? '' : String(d));
 
-        const monthBand = new Array(headers.length).fill('');
-        monthBand[1] = 'JANUARY';
-        const aoa = [headers, monthBand, ...rows];
+    const fmtTime = (t) => {
+        if(!t) return '';
+        const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+        if (!m) return String(t);
+        const hh = parseInt(m[1], 10), mm = m[2];
+        const period = hh < 12 ? 'AM' : 'PM';
+        return `${hh % 12 || 12}:${mm} ${period}`;
+    };
 
-        const worksheet = XLSX.utils.aoa_to_sheet(aoa, { sheetStubs: true });
-        const workbook  = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Passenger Records');
+    const headers = [
+        '#', 'SURNAME', 'NAME', 'MIDDLE NAME', 'PORTAL', 'PAYMENT', 'AGENCY',
+        'DOB', 'PPT #', 'DOI', 'DOE', 'APPT DATE', 'TIME', 'EMBASSY', 'DEP DATE', 'TOUR NAME',
+    ];
 
-        worksheet['!cols'] = [
-            { wch:  4 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 12 },
+    const rows = records.map((r, i) => ([
+        i + 1,
+        r.surname || '',
+        r.firstName || '',
+        r.middleName || '',
+        r.portalRefNo || '',
+        r.payment || '',
+        r.agency || '',
+        fmtDate(r.dateOfBirth),
+        r.passportNumber || '',
+        fmtDate(r.dateOfIssue),
+        fmtDate(r.dateOfExpiry),
+        fmtDate(r.appointmentDate),
+        fmtTime(r.appointmentTime),
+        r.embassy || '',
+        fmtDate(r.departureDate),
+        r.tourName || '',
+    ]));
+
+    const MONTH_LABELS = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    let filenameSlug = new Date().toISOString().slice(0, 10);
+    let monthBandLabel = 'ALL RECORDS';
+
+    if (hasMonthFilter && hasYearFilter) {
+        filenameSlug = `${MONTH_LABELS[filterMonth].slice(0, 3).toLowerCase()}-${filterYear}`;
+        monthBandLabel = `${MONTH_LABELS[filterMonth].toUpperCase()} ${filterYear}`;
+    } else if (hasMonthFilter) {
+        filenameSlug = MONTH_LABELS[filterMonth].slice(0, 3).toLowerCase();
+        monthBandLabel = MONTH_LABELS[filterMonth].toUpperCase();
+    } else if (hasYearFilter) {
+        filenameSlug = String(filterYear);
+        monthBandLabel = String(filterYear);
+    }
+
+    const monthBand = new Array(headers.length).fill('');
+    monthBand[1] = monthBandLabel;
+    const aoa = [headers, monthBand, ...rows];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa, {sheetStubs: true});
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Passenger Records');
+
+    worksheet['!cols'] = [
+        {wch:4}, {wch:16}, {wch:18}, {wch:16},{ wch: 12 },
             { wch: 10 }, { wch: 42 }, { wch: 13 }, { wch: 13 }, { wch: 13 },
             { wch: 13 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 28 },
-        ];
+    ];
 
-        worksheet['!freeze'] = { xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft' };
-        worksheet['!merges'] = [{ s: { r: 1, c: 1 }, e: { r: 1, c: 15 } }];
+    worksheet['!freeze'] = {xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft'};
+    worksheet['!merges'] = [{s: {r: 1, c: 1}, e: {r:1, c:15}}];
+    worksheet['!autofilter'] = { ref: 'A1:P1'};
 
-        const HEADER_COLORS = [
-            '1F6B75', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', 'E26B0A',
-            '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', 'C00000',
-        ];
+    const HEADER_COLORS = [
+        '1F6B75', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', 'E26B0A',
+        '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', 'C00000',
+    ];
 
-        const headerStyle = (bgHex) => ({
-            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-            fill:      { fgColor: { rgb: bgHex }, patternType: 'solid' },
-            alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
-            border:    { bottom: { style: 'thin', color: { rgb: 'FFFFFF' } } },
-        });
+    const headerStyle = (bgHex) => ({
+        font: {bold: true, color: { rgb: 'FFFFFF'}, sz: 11, name: 'Calibri'},
+        fill: {fgColor: {rgb: bgHex}, patternType: 'solid'},
+        alignment: {horizontal: 'center', vertical: 'center', wrapText: false},
+        border: {bottom: {style: 'thin', color: {rgb: 'FFFFFF'}}},
+    });
 
-        const gridBorder = {
-            top:    { style: 'thin', color: { rgb: '1F1F1F' } },
-            bottom: { style: 'thin', color: { rgb: '1F1F1F' } },
-            left:   { style: 'thin', color: { rgb: '1F1F1F' } },
-            right:  { style: 'thin', color: { rgb: '1F1F1F' } },
-        };
+    const gridBorder = {
+        top: {style: 'thin', color: {rgb: '1F1F1F'}},
+        bottom: {style: 'thin', color: {rgb: '1F1F1F'}},
+        left: {style: 'thin', color: {rgb: '1F1F1F'}},
+        right: {style: 'thin', color: {rgb: '1F1F1F'}},
+    }
 
-        const bodyStyle = (bgHex = null) => ({
-            font:      { sz: 10, color: { rgb: '000000' } },
-            fill:      bgHex ? { fgColor: { rgb: bgHex }, patternType: 'solid' } : undefined,
-            alignment: { horizontal: 'left', vertical: 'center', wrapText: false },
-            border:    gridBorder,
-        });
+    const bodyStyle = (bgHex = null) => ({
+        font: {sz: 10, color: {rgb: '000000'}, name: 'Calibri'},
+        fill: bgHex ? {fgColor : {rgb: bgHex}, patternType: 'solid'} : undefined,
+        alignment: {horizontal: 'left', vertical: 'center', wrapText: false},
+        border: gridBorder,
+    });
 
-        const colLetters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P'];
+    const colLetters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P'];
         colLetters.forEach((col, i) => {
             const ref = `${col}1`;
             if (worksheet[ref]) worksheet[ref].s = headerStyle(HEADER_COLORS[i]);
@@ -488,7 +672,7 @@ export async function exportExcel(req, res) {
             border: gridBorder,
         };
         worksheet['B2'].s = {
-            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 16 },
+            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 16, name: 'Calibri' },
             fill:      { fgColor: { rgb: '0B2447' }, patternType: 'solid' },
             alignment: { horizontal: 'center', vertical: 'center' },
             border:    gridBorder,
@@ -518,15 +702,16 @@ export async function exportExcel(req, res) {
         worksheet['!rows'] = [{ hpt: 20 }, { hpt: 22 }];
 
         const buffer   = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-        const filename = `passenger-records-${new Date().toISOString().slice(0, 10)}.xlsx`;
+        const filename = `passenger-records-${filenameSlug}.xlsx`;
 
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         return res.send(buffer);
 
-    } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
-    }
+
+   } catch (error) {
+        return res.status(500).json({success: false, error: error.message});
+   }
 }
 
 
@@ -540,26 +725,10 @@ export async function downloadTemplate(req, res) {
         const monthBand = new Array(headers.length).fill('');
         monthBand[1] = 'JANUARY';
 
-        const sampleRow = [
-            1,
-            'DELA CRUZ',
-            'JUAN',
-            'SANTOS',
-            '',
-            'unpaid / partial / paid',
-            '',
-            '15/06/1990',
-            'P1234567A',
-            '01/03/2020',
-            '01/03/2030',
-            '25/12/2026',
-            '8:30 AM',
-            '',
-            '28/12/2026',
-            '',
-        ];
+        // Create 10 empty rows for users to fill in
+        const emptyRows = Array.from({ length: 10 }, () => new Array(headers.length).fill(''));
 
-        const worksheet = XLSX.utils.aoa_to_sheet([headers, monthBand, sampleRow], { sheetStubs: true });
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, monthBand, ...emptyRows], { sheetStubs: true });
         const workbook  = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Template');
 
@@ -571,18 +740,12 @@ export async function downloadTemplate(req, res) {
 
         worksheet['!freeze'] = { xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft' };
         worksheet['!merges'] = [{ s: { r: 1, c: 1 }, e: { r: 1, c: 15 } }];
+        worksheet['!autofilter'] = { ref: 'A1:P1' };
 
         const HEADER_COLORS = [
             '1F6B75', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', 'E26B0A',
             '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', '0B2447', 'C00000',
         ];
-
-        const headerStyle = (bgHex) => ({
-            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-            fill:      { fgColor: { rgb: bgHex }, patternType: 'solid' },
-            alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
-            border:    { bottom: { style: 'thin', color: { rgb: 'FFFFFF' } } },
-        });
 
         const gridBorder = {
             top:    { style: 'thin', color: { rgb: '1F1F1F' } },
@@ -591,8 +754,15 @@ export async function downloadTemplate(req, res) {
             right:  { style: 'thin', color: { rgb: '1F1F1F' } },
         };
 
+        const headerStyle = (bgHex) => ({
+            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' },
+            fill:      { fgColor: { rgb: bgHex }, patternType: 'solid' },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
+            border:    gridBorder,
+        });
+
         const bodyStyle = (bgHex = null) => ({
-            font:      { sz: 10, color: { rgb: '000000' } },
+            font:      { sz: 10, color: { rgb: '000000' }, name: 'Calibri' },
             fill:      bgHex ? { fgColor: { rgb: bgHex }, patternType: 'solid' } : undefined,
             alignment: { horizontal: 'left', vertical: 'center', wrapText: false },
             border:    gridBorder,
@@ -609,7 +779,7 @@ export async function downloadTemplate(req, res) {
             border: gridBorder,
         };
         worksheet['B2'].s = {
-            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 16 },
+            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 16, name: 'Calibri' },
             fill:      { fgColor: { rgb: '0B2447' }, patternType: 'solid' },
             alignment: { horizontal: 'center', vertical: 'center' },
             border:    gridBorder,
@@ -622,15 +792,35 @@ export async function downloadTemplate(req, res) {
             N: 'B4C6E7', O: 'B4C6E7',
         };
 
-        for (const col of colLetters) {
-            const ref = `${col}3`;
-            if (!worksheet[ref]) worksheet[ref] = { t: 's', v: '' };
-            worksheet[ref].s = bodyStyle(bodyFillByCol[col] || null);
+        const lastEmptyRow = emptyRows.length + 2;
+        for (let r = 3; r <= lastEmptyRow; r++) {
+            for (const col of colLetters) {
+                const ref = `${col}${r}`;
+                if (!worksheet[ref]) worksheet[ref] = { t: 's', v: '' };
+                worksheet[ref].s = bodyStyle(bodyFillByCol[col] || null);
+            }
+
+            const payRef = `F${r}`;
+            worksheet[payRef].s = {
+                ...worksheet[payRef].s,
+                font: { ...worksheet[payRef].s.font, bold: true },
+                alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
+            };
+
+            for (const c of ['L', 'M']) {
+                const ref = `${c}${r}`;
+                worksheet[ref].s = {
+                    ...worksheet[ref].s,
+                    alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
+                };
+            }
+
+            const tourRef = `P${r}`;
+            worksheet[tourRef].s = {
+                ...worksheet[tourRef].s,
+                font: { ...worksheet[tourRef].s.font, bold: true, color: { rgb: 'E60000' } },
+            };
         }
-        worksheet['F3'].s = {
-            ...worksheet['F3'].s,
-            font: { ...worksheet['F3'].s.font, bold: true },
-        };
 
         worksheet['!rows'] = [{ hpt: 20 }, { hpt: 22 }];
 

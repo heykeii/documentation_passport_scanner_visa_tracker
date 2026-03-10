@@ -108,6 +108,8 @@ const Management = () => {
 
     /* Export state */
     const [exporting, setExporting] = useState(false);
+    const [exportMonth, setExportMonth] = useState('');
+    const [exportYear, setExportYear] = useState('');
 
     /* Template state */
     const [downloading, setDownloading] = useState(false);
@@ -165,15 +167,28 @@ const Management = () => {
     /* ── Export ── */
     const handleExport = async () => {
         setExporting(true);
-        try {
-            const response = await axios.get(`${API}/management/export`, {
+         try {
+            const params = new URLSearchParams();
+            if (exportMonth !== '') params.set('month', exportMonth);
+            if (exportYear  !== '') params.set('year',  exportYear);
+            const qs = params.toString() ? `?${params.toString()}` : '';
+
+            const response = await axios.get(`${API}/management/export${qs}`, {
                 headers: authHeaders(),
                 responseType: 'blob',
             });
+
+            // Mirror backend filename logic
+            const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+            let slug = new Date().toISOString().slice(0, 10);
+            if (exportMonth !== '' && exportYear !== '') slug = `${MONTH_ABBR[Number(exportMonth)]}-${exportYear}`;
+            else if (exportMonth !== '') slug = MONTH_ABBR[Number(exportMonth)];
+            else if (exportYear  !== '') slug = exportYear;
+
             const url = URL.createObjectURL(new Blob([response.data]));
             const a   = document.createElement('a');
             a.href    = url;
-            a.download = `passenger-records-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            a.download = `passenger-records-${slug}.xlsx`;
             a.click();
             URL.revokeObjectURL(url);
             toast.success('Records exported successfully.');
@@ -323,7 +338,7 @@ const Management = () => {
 
                         <p className="text-[11.5px] text-slate-500 dark:text-[#A5D7E8]/55">
                             {migrationMode
-                                ? 'Imported rows are tagged with selected month/year for legacy filtering.'
+                                ? 'Selected migration month/year overrides appointment and created dates for month/year filtering.'
                                 : 'Use migration mode only for old data with missing appointment year.'}
                         </p>
                     </div>
@@ -370,11 +385,31 @@ const Management = () => {
                     icon={Download}
                     iconColor="#576CBC"
                     title="Export to Excel"
-                    description="Download all records as a spreadsheet"
+                    description="Download records as a spreadsheet"
                 >
-                    <p className="font-[Outfit] text-[13px] text-slate-500 dark:text-[#A5D7E8]/60 mb-4 leading-relaxed">
-                        Exports every passenger record in the system to a formatted <strong>.xlsx</strong> file matching the standard Excel format.
+                    <p className="font-[Outfit] text-[13px] text-slate-500 dark:text-[#A5D7E8]/60 mb-3 leading-relaxed">
+                        Filter by month and/or year, or leave both blank to export <strong>all records</strong>.
                     </p>
+                    <div className="flex items-center gap-2 mb-3">
+                        <Select value={exportMonth || 'all'} onValueChange={(v) => setExportMonth(v === 'all' ? '' : v)}>
+                            <SelectTrigger className="flex-1 h-8 text-[12.5px] font-medium font-[Outfit] bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 rounded-lg">
+                                <SelectValue placeholder="All Months" />
+                            </SelectTrigger>
+                            <SelectContent className="font-[Outfit]">
+                                <SelectItem value="all">All Months</SelectItem>
+                                {MONTH_OPTIONS.map((m, i) => <SelectItem key={m} value={String(i)}>{m}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        <Select value={exportYear || 'all'} onValueChange={(v) => setExportYear(v === 'all' ? '' : v)}>
+                            <SelectTrigger className="flex-1 h-8 text-[12.5px] font-medium font-[Outfit] bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 rounded-lg">
+                                <SelectValue placeholder="All Years" />
+                            </SelectTrigger>
+                            <SelectContent className="font-[Outfit]">
+                                <SelectItem value="all">All Years</SelectItem>
+                                {YEAR_OPTIONS.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <Button
                         onClick={handleExport}
                         disabled={exporting}
@@ -382,7 +417,7 @@ const Management = () => {
                     >
                         {exporting
                             ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />Exporting…</>
-                            : <><Download className="w-3.5 h-3.5 mr-2" />Export All Records</>
+                            : <><Download className="w-3.5 h-3.5 mr-2" />Export Records</>
                         }
                     </Button>
                 </Section>

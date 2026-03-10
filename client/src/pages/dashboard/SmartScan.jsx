@@ -47,6 +47,49 @@ const EMPTY_FORM = { ...PASSPORT_FIELDS, ...ASSIGNMENT_FIELDS };
 const MONTH_OPTIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const YEAR_OPTIONS = Array.from({ length: 31 }, (_, i) => String(2010 + i));
 
+const normalizeToDDMMYYYY = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const [yyyy, mm, dd] = raw.split('-');
+        return `${dd}/${mm}/${yyyy}`;
+    }
+
+    const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slash) {
+        return `${slash[1].padStart(2, '0')}/${slash[2].padStart(2, '0')}/${slash[3]}`;
+    }
+
+    const dash = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dash) {
+        return `${dash[1].padStart(2, '0')}/${dash[2].padStart(2, '0')}/${dash[3]}`;
+    }
+
+    return raw;
+};
+
+const parseDDMMYYYY = (value = '') => {
+    const normalized = normalizeToDDMMYYYY(value);
+    const m = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;
+
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    const yyyy = parseInt(m[3], 10);
+    const date = new Date(yyyy, mm - 1, dd);
+
+    if (
+        date.getFullYear() !== yyyy ||
+        date.getMonth() !== mm - 1 ||
+        date.getDate() !== dd
+    ) {
+        return null;
+    }
+
+    return date;
+};
+
 const formatDate = (date) => date.toISOString().split('T')[0];
 const addDays = (days) => {
     const d = new Date(); d.setDate(d.getDate() + days); return formatDate(d);
@@ -95,7 +138,9 @@ const DateField = ({ label, id, value, onChange, icon: Icon, required, error }) 
             {label}
             {required && <span className="text-rose-400 normal-case tracking-normal font-bold">*</span>}
         </Label>
-        <Input id={id} type="date" value={value} onChange={e => onChange(id, e.target.value)}
+        <Input id={id} type="text" inputMode="numeric" placeholder="dd/mm/yyyy" value={value}
+            onChange={e => onChange(id, e.target.value)}
+            onBlur={e => onChange(id, normalizeToDDMMYYYY(e.target.value))}
             className={`h-8 text-[13px] font-medium rounded-lg transition-all bg-white dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 focus-visible:ring-2 hover:border-slate-300 dark:hover:border-slate-600 ${
                 error
                     ? 'border-rose-400 focus-visible:ring-rose-300/30 focus-visible:border-rose-400'
@@ -208,23 +253,36 @@ const SmartScan = () => {
         else if (form.passportNumber.trim().length < 5)  e.passportNumber = 'Min 5 characters';
         if (!form.portalRefNo.trim())    e.portalRefNo    = 'Required';
 
+        const dateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry', 'appointmentDate', 'departureDate'];
+        for (const field of dateFields) {
+            if (form[field] && !parseDDMMYYYY(form[field])) {
+                e[field] = 'Use DD/MM/YYYY';
+            }
+        }
+
         // Date of Birth must be before Date of Issue
-        if (form.dateOfBirth && form.dateOfIssue) {
-            if (new Date(form.dateOfBirth) >= new Date(form.dateOfIssue)) {
+        const dob = parseDDMMYYYY(form.dateOfBirth);
+        const doi = parseDDMMYYYY(form.dateOfIssue);
+        const doe = parseDDMMYYYY(form.dateOfExpiry);
+        const appt = parseDDMMYYYY(form.appointmentDate);
+        const dep = parseDDMMYYYY(form.departureDate);
+
+        if (dob && doi) {
+            if (dob >= doi) {
                 e.dateOfBirth = 'Must be before date of issue';
                 e.dateOfIssue = e.dateOfIssue || 'Must be after date of birth';
             }
         }
         // Date of Issue must be before Date of Expiry
-        if (form.dateOfIssue && form.dateOfExpiry) {
-            if (new Date(form.dateOfIssue) >= new Date(form.dateOfExpiry)) {
+        if (doi && doe) {
+            if (doi >= doe) {
                 e.dateOfIssue  = e.dateOfIssue || 'Must be before expiry date';
                 e.dateOfExpiry = 'Must be after date of issue';
             }
         }
         // Appointment Date must be before Departure Date
-        if (form.appointmentDate && form.departureDate) {
-            if (new Date(form.appointmentDate) >= new Date(form.departureDate)) {
+        if (appt && dep) {
+            if (appt >= dep) {
                 e.appointmentDate = 'Must be before departure date';
                 e.departureDate   = 'Must be after appointment date';
             }
@@ -431,7 +489,7 @@ const SmartScan = () => {
 
                         {migrationMode && (!migrationMonth || !migrationYear) && (
                             <p className="mt-2 text-[12px] text-amber-600 dark:text-amber-400 font-medium">
-                                Select month and year first. New records will be tagged as legacy migration data.
+                                Select month and year first. In migration mode, this month/year overrides appointment date and created date for month/year filtering.
                             </p>
                         )}
 
@@ -893,14 +951,14 @@ const SmartScan = () => {
                                 <Field label="Agency" id="agency" placeholder="e.g. Ace Travel PH"
                                     value={assignForm.agency} onChange={updateAssign} icon={BriefcaseBusiness} />
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Field label="Appt. Date" id="appointmentDate" type="date"
+                                    <DateField label="Appt. Date" id="appointmentDate"
                                         value={assignForm.appointmentDate} onChange={updateAssign} icon={Calendar} />
                                     <Field label="Appt. Time" id="appointmentTime" type="time"
                                         value={assignForm.appointmentTime} onChange={updateAssign} icon={Clock} />
                                 </div>
                                 <Field label="Embassy" id="embassy" placeholder="e.g. Japan Embassy - Manila"
                                     value={assignForm.embassy} onChange={updateAssign} icon={Building2} />
-                                <Field label="Departure Date" id="departureDate" type="date"
+                                <DateField label="Departure Date" id="departureDate"
                                     value={assignForm.departureDate} onChange={updateAssign} icon={Plane} />
                                 <Field label="Tour Name" id="tourName" placeholder="e.g. Japan Cherry Blossom 2026"
                                     value={assignForm.tourName} onChange={updateAssign} icon={MapPin} />
