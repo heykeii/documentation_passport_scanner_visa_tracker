@@ -12,6 +12,7 @@ import SmartScan from './pages/dashboard/SmartScan';
 import Management from './pages/dashboard/Management';
 import PassengerRecords from './pages/dashboard/PassengerRecords';
 import Settings from './pages/dashboard/Settings';
+import Analytics from './pages/dashboard/Analytics';
 
 const App = () => {
     return (
@@ -31,6 +32,7 @@ const App = () => {
                     <Route path='management'    element={<Management />} />
                     <Route path='records'       element={<PassengerRecords />} />
                     <Route path='settings'      element={<Settings />} />
+                    <Route path='analytics'     element={<Analytics />} />
                 </Route>
             </Routes>
         </NotificationProvider>

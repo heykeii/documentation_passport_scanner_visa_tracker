@@ -56,7 +56,10 @@ function resolveField(rawKey) {
     const normalized = normalizeKey(rawKey);
     if (HEADER_ALIASES[normalized]) return HEADER_ALIASES[normalized];
     const stripped = normalized.replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-    return HEADER_ALIASES[stripped] || null;
+    if (HEADER_ALIASES[stripped]) return HEADER_ALIASES[stripped];
+    // Keyword fallback — handles any variant of "pax" or "passenger" in the header
+    if (/pax|passenger/i.test(rawKey)) return 'numberOfPax';
+    return null;
 }
 
 // ─── Cell value extraction ───────────────────────────────────────────────────
@@ -136,12 +139,18 @@ export async function importAnalyticsExcel(req, res) {
 
         // Build column → field map from header row
         const colFieldMap = new Map();
+        const detectedHeaders = [];
         for (let c = range.s.c; c <= range.e.c; c++) {
             const cell = sheet[XLSX.utils.encode_cell({ r: headerRow, c })];
             if (!cell) continue;
-            const field = resolveField(getCellValue(cell, 'text'));
+            // Try display text first, then raw value as fallback for matching
+            const displayText = getCellValue(cell, 'text');
+            const rawVal      = cell.v != null ? String(cell.v).trim() : '';
+            const field       = resolveField(displayText) || resolveField(rawVal);
+            detectedHeaders.push(`"${displayText}" → ${field || 'UNMATCHED'}`);
             if (field) colFieldMap.set(c, field);
         }
+        console.log('[Analytics Import] Headers:', detectedHeaders.join(' | '));
 
         const saved   = [];
         const skipped = [];
@@ -154,6 +163,11 @@ export async function importAnalyticsExcel(req, res) {
                 raw[field]      = getCellValue(cell, fieldType);
             }
 
+            // Debug first data row
+            if (r === headerRow + 1) {
+                console.log('[Analytics Import] First row raw values:', JSON.stringify(raw));
+            }
+
             // Skip totals rows or blank rows (no Ref No)
             const refNo = String(raw.refNo || '').trim();
             if (!refNo) {
@@ -161,10 +175,10 @@ export async function importAnalyticsExcel(req, res) {
                 continue;
             }
 
-            // Derive month/year from departure date, fall back to import params
-            const { month: dMonth, year: dYear } = parseDepartureMonthYear(raw.departureDate);
-            const rowMonth = dMonth || importMonth;
-            const rowYear  = dYear  || importYear;
+            // Always use the user-selected import month/year so all records in this
+            // batch belong to the same report period regardless of departure date.
+            const rowMonth = importMonth;
+            const rowYear  = importYear;
 
             const totalSOA  = typeof raw.totalSOA  === 'number' ? raw.totalSOA  : 0;
             const totalPO   = typeof raw.totalPO   === 'number' ? raw.totalPO   : 0;
@@ -176,7 +190,7 @@ export async function importAnalyticsExcel(req, res) {
                 transactionType: String(raw.transactionType || 'Visa').trim(),
                 agentName:       String(raw.agentName       || '').trim(),
                 status:          String(raw.status          || '').trim(),
-                numberOfPax:     typeof raw.numberOfPax === 'number' ? raw.numberOfPax : 0,
+                numberOfPax:     Math.round(Number(raw.numberOfPax) || 0),
                 totalSOA,
                 totalPO,
                 netProfit,
@@ -211,13 +225,27 @@ export async function getAnalytics(req, res) {
             ? await VisaTransaction.getByMonthYear(filterMonth, filterYear)
             : await VisaTransaction.getAll();
 
+        // Debug: log first record's pax field to trace the issue
+        if (transactions.length > 0) {
+            const t0 = transactions[0];
+            console.log('[Analytics Get] First record pax debug:', JSON.stringify({
+                refNo: t0.refNo,
+                numberOfPax: t0.numberOfPax,
+                typeofPax: typeof t0.numberOfPax,
+                rawKeys: Object.keys(t0).filter(k => k.toLowerCase().includes('pax')),
+            }));
+        }
+
+        // Helper: DynamoDB may return numbers as Number objects — force to JS number
+        const n = (v) => Number(v) || 0;
+
         // KPI totals
         const kpi = transactions.reduce(
             (acc, t) => {
-                acc.totalSOA  += t.totalSOA   || 0;
-                acc.totalPO   += t.totalPO    || 0;
-                acc.netProfit += t.netProfit  || 0;
-                acc.totalPax  += t.numberOfPax || 0;
+                acc.totalSOA  += n(t.totalSOA);
+                acc.totalPO   += n(t.totalPO);
+                acc.netProfit += n(t.netProfit);
+                acc.totalPax  += n(t.numberOfPax);
                 return acc;
             },
             { totalSOA: 0, totalPO: 0, netProfit: 0, totalPax: 0 }
@@ -228,10 +256,10 @@ export async function getAnalytics(req, res) {
         for (const t of transactions) {
             const k = t.agentName || 'Unknown';
             if (!agentMap[k]) agentMap[k] = { agentName: k, totalSOA: 0, totalPO: 0, netProfit: 0, pax: 0 };
-            agentMap[k].totalSOA  += t.totalSOA   || 0;
-            agentMap[k].totalPO   += t.totalPO    || 0;
-            agentMap[k].netProfit += t.netProfit  || 0;
-            agentMap[k].pax       += t.numberOfPax || 0;
+            agentMap[k].totalSOA  += n(t.totalSOA);
+            agentMap[k].totalPO   += n(t.totalPO);
+            agentMap[k].netProfit += n(t.netProfit);
+            agentMap[k].pax       += n(t.numberOfPax);
         }
         const byAgent = Object.values(agentMap).sort((a, b) => b.netProfit - a.netProfit);
 
@@ -241,7 +269,7 @@ export async function getAnalytics(req, res) {
             const k = t.status || 'Unknown';
             if (!statusMap[k]) statusMap[k] = { status: k, count: 0, pax: 0 };
             statusMap[k].count++;
-            statusMap[k].pax += t.numberOfPax || 0;
+            statusMap[k].pax += n(t.numberOfPax);
         }
         const byStatus = Object.values(statusMap);
 
@@ -250,10 +278,10 @@ export async function getAnalytics(req, res) {
         for (const t of transactions) {
             const k = t.region || 'Other';
             if (!regionMap[k]) regionMap[k] = { region: k, totalSOA: 0, totalPO: 0, netProfit: 0, pax: 0 };
-            regionMap[k].totalSOA  += t.totalSOA   || 0;
-            regionMap[k].totalPO   += t.totalPO    || 0;
-            regionMap[k].netProfit += t.netProfit  || 0;
-            regionMap[k].pax       += t.numberOfPax || 0;
+            regionMap[k].totalSOA  += n(t.totalSOA);
+            regionMap[k].totalPO   += n(t.totalPO);
+            regionMap[k].netProfit += n(t.netProfit);
+            regionMap[k].pax       += n(t.numberOfPax);
         }
         const byRegion = Object.values(regionMap).sort((a, b) => b.netProfit - a.netProfit);
 
@@ -262,16 +290,16 @@ export async function getAnalytics(req, res) {
         const trendMap = {};
         for (const t of transactions) {
             if (!t.month || !t.year) continue;
-            const k = `${t.year}-${String(t.month).padStart(2, '0')}`;
+            const k = `${t.year}-${String(n(t.month)).padStart(2, '0')}`;
             if (!trendMap[k]) trendMap[k] = {
-                key: k, month: t.month, year: t.year,
-                label: `${MLABELS[t.month]} ${t.year}`,
+                key: k, month: n(t.month), year: n(t.year),
+                label: `${MLABELS[n(t.month)]} ${n(t.year)}`,
                 totalSOA: 0, totalPO: 0, netProfit: 0, pax: 0,
             };
-            trendMap[k].totalSOA  += t.totalSOA   || 0;
-            trendMap[k].totalPO   += t.totalPO    || 0;
-            trendMap[k].netProfit += t.netProfit  || 0;
-            trendMap[k].pax       += t.numberOfPax || 0;
+            trendMap[k].totalSOA  += n(t.totalSOA);
+            trendMap[k].totalPO   += n(t.totalPO);
+            trendMap[k].netProfit += n(t.netProfit);
+            trendMap[k].pax       += n(t.numberOfPax);
         }
         const monthlyTrend = Object.values(trendMap).sort((a, b) => a.key.localeCompare(b.key));
 
@@ -287,9 +315,18 @@ export async function getAnalytics(req, res) {
             }))
             .sort((a, b) => b.margin - a.margin);
 
+        // Normalise numeric fields on each transaction before sending to frontend
+        const normalizedTx = transactions.map(t => ({
+            ...t,
+            numberOfPax: n(t.numberOfPax),
+            totalSOA:    n(t.totalSOA),
+            totalPO:     n(t.totalPO),
+            netProfit:   n(t.netProfit),
+        }));
+
         return res.status(200).json({
             success: true,
-            data: { transactions, kpi, byAgent, byStatus, byRegion, monthlyTrend, byAgentMargin },
+            data: { transactions: normalizedTx, kpi, byAgent, byStatus, byRegion, monthlyTrend, byAgentMargin },
         });
     } catch (error) {
         return res.status(500).json({ success: false, error: error.message });

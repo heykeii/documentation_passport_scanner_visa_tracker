@@ -1,6 +1,6 @@
 ﻿import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ScanLine, FileSpreadsheet, Users, Settings, LogOut, Plane, MoreVertical } from 'lucide-react';
+import { LayoutDashboard, ScanLine, FileSpreadsheet, Users, Settings, LogOut, Plane, MoreVertical, BarChart2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -11,6 +11,7 @@ const navMain = [
 ];
 const navData = [
     { to: '/dashboard/management', label: 'Management',        icon: FileSpreadsheet },
+    { to: '/dashboard/analytics', label: 'Analytics', icon: BarChart2},
     { to: '/dashboard/records',    label: 'Passenger Records', icon: Users },
 ];
 const navSystem = [

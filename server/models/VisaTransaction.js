@@ -15,7 +15,7 @@ export async function create(data) {
             transactionType: data.transactionType || "Visa",
             agentName: data.agentName || "",
             status: data.status || "",
-            numberOfPax: data.numberOfPax === 'number' ? data.numberOfPax: 0,
+            numberOfPax: typeof data.numberOfPax === 'number' ? data.numberOfPax : 0,
             totalSOA: typeof data.totalSOA === 'number' ? data.totalSOA: 0,
             totalPO: typeof data.totalPO === 'number' ? data.totalPO: 0,
             netProfit: typeof data.netProfit === 'number' ? data.netProfit: 0,
