@@ -150,8 +150,6 @@ export async function importAnalyticsExcel(req, res) {
             detectedHeaders.push(`"${displayText}" → ${field || 'UNMATCHED'}`);
             if (field) colFieldMap.set(c, field);
         }
-        console.log('[Analytics Import] Headers:', detectedHeaders.join(' | '));
-
         const saved   = [];
         const skipped = [];
 
@@ -161,11 +159,6 @@ export async function importAnalyticsExcel(req, res) {
                 const cell      = sheet[XLSX.utils.encode_cell({ r, c })];
                 const fieldType = CURRENCY_FIELDS.has(field) ? 'currency' : INTEGER_FIELDS.has(field) ? 'integer' : 'text';
                 raw[field]      = getCellValue(cell, fieldType);
-            }
-
-            // Debug first data row
-            if (r === headerRow + 1) {
-                console.log('[Analytics Import] First row raw values:', JSON.stringify(raw));
             }
 
             // Skip totals rows or blank rows (no Ref No)
@@ -225,17 +218,6 @@ export async function getAnalytics(req, res) {
             ? await VisaTransaction.getByMonthYear(filterMonth, filterYear)
             : await VisaTransaction.getAll();
 
-        // Debug: log first record's pax field to trace the issue
-        if (transactions.length > 0) {
-            const t0 = transactions[0];
-            console.log('[Analytics Get] First record pax debug:', JSON.stringify({
-                refNo: t0.refNo,
-                numberOfPax: t0.numberOfPax,
-                typeofPax: typeof t0.numberOfPax,
-                rawKeys: Object.keys(t0).filter(k => k.toLowerCase().includes('pax')),
-            }));
-        }
-
         // Helper: DynamoDB may return numbers as Number objects — force to JS number
         const n = (v) => Number(v) || 0;
 
@@ -255,13 +237,22 @@ export async function getAnalytics(req, res) {
         const agentMap = {};
         for (const t of transactions) {
             const k = t.agentName || 'Unknown';
-            if (!agentMap[k]) agentMap[k] = { agentName: k, totalSOA: 0, totalPO: 0, netProfit: 0, pax: 0 };
+            if (!agentMap[k]) agentMap[k] = { agentName: k, totalSOA: 0, totalPO: 0, netProfit: 0, totalPax: 0, confirmedCount: 0, totalCount: 0 };
             agentMap[k].totalSOA  += n(t.totalSOA);
             agentMap[k].totalPO   += n(t.totalPO);
             agentMap[k].netProfit += n(t.netProfit);
-            agentMap[k].pax       += n(t.numberOfPax);
+            agentMap[k].totalPax  += n(t.numberOfPax);
+            agentMap[k].totalCount++;
+            if (t.status === 'Confirmed') agentMap[k].confirmedCount++;
         }
-        const byAgent = Object.values(agentMap).sort((a, b) => b.netProfit - a.netProfit);
+        
+        // Calculate derived fields for each agent
+        const byAgent = Object.values(agentMap).map(a => ({
+            ...a,
+            margin: a.totalSOA > 0 ? parseFloat(((a.netProfit / a.totalSOA) * 100).toFixed(2)) : 0,
+            confirmedRatio: a.totalCount > 0 ? parseFloat(((a.confirmedCount / a.totalCount) * 100).toFixed(2)) : 0,
+            avgSOAPerPax: a.totalPax > 0 ? parseFloat((a.totalSOA / a.totalPax).toFixed(2)) : 0,
+        })).sort((a, b) => b.netProfit - a.netProfit);
 
         // By status
         const statusMap = {};
@@ -277,11 +268,11 @@ export async function getAnalytics(req, res) {
         const regionMap = {};
         for (const t of transactions) {
             const k = t.region || 'Other';
-            if (!regionMap[k]) regionMap[k] = { region: k, totalSOA: 0, totalPO: 0, netProfit: 0, pax: 0 };
+            if (!regionMap[k]) regionMap[k] = { region: k, totalSOA: 0, totalPO: 0, netProfit: 0, totalPax: 0 };
             regionMap[k].totalSOA  += n(t.totalSOA);
             regionMap[k].totalPO   += n(t.totalPO);
             regionMap[k].netProfit += n(t.netProfit);
-            regionMap[k].pax       += n(t.numberOfPax);
+            regionMap[k].totalPax  += n(t.numberOfPax);
         }
         const byRegion = Object.values(regionMap).sort((a, b) => b.netProfit - a.netProfit);
 
@@ -294,12 +285,12 @@ export async function getAnalytics(req, res) {
             if (!trendMap[k]) trendMap[k] = {
                 key: k, month: n(t.month), year: n(t.year),
                 label: `${MLABELS[n(t.month)]} ${n(t.year)}`,
-                totalSOA: 0, totalPO: 0, netProfit: 0, pax: 0,
+                totalSOA: 0, totalPO: 0, netProfit: 0, totalPax: 0,
             };
             trendMap[k].totalSOA  += n(t.totalSOA);
             trendMap[k].totalPO   += n(t.totalPO);
             trendMap[k].netProfit += n(t.netProfit);
-            trendMap[k].pax       += n(t.numberOfPax);
+            trendMap[k].totalPax  += n(t.numberOfPax);
         }
         const monthlyTrend = Object.values(trendMap).sort((a, b) => a.key.localeCompare(b.key));
 
@@ -308,7 +299,7 @@ export async function getAnalytics(req, res) {
             .filter(a => a.totalSOA > 0)
             .map(a => ({
                 agentName: a.agentName,
-                pax:       a.pax,
+                totalPax:  a.totalPax,
                 totalSOA:  a.totalSOA,
                 netProfit: a.netProfit,
                 margin:    parseFloat(((a.netProfit / a.totalSOA) * 100).toFixed(2)),

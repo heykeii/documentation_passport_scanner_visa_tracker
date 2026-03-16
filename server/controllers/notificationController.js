@@ -65,6 +65,6 @@ export async function broadcastPassportAdded(senderEmail, senderName, count) {
             )
         );
     } catch (error) {
-        console.error('Failed to broadcast PASSPORT_ADDED notification:', error.message);
+        // broadcast error suppressed
     }
 }

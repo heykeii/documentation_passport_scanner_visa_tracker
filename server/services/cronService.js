@@ -100,13 +100,11 @@ async function checkUpcomingAppointments() {
 export function startCronJobs() {
     // Runs every day at 8:00 AM
     cron.schedule('0 8 * * *', async () => {
-        console.log('⏰ Running daily notification checks...');
         try {
             await checkPassportExpiry();
             await checkUpcomingAppointments();
-            console.log('✅ Daily notification checks complete.');
         } catch (error) {
-            console.error('❌ Cron job error:', error.message);
+            // silently handle cron errors
         }
     });
 

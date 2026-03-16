@@ -38,7 +38,7 @@ const PASSPORT_FIELDS = {
     dateOfIssue: '', dateOfExpiry: '',
 };
 const ASSIGNMENT_FIELDS = {
-    portalRefNo: '', payment: 'unpaid', agency: '',
+    portalRefNo: '', payment: '', agency: '',
     appointmentDate: '', appointmentTime: '',
     embassy: '', departureDate: '', tourName: '',
 };
@@ -618,14 +618,13 @@ const SmartScan = () => {
                                                             <CreditCard className="w-3 h-3" strokeWidth={2} />Payment Status
                                                         </Label>
                                                         <Select
-                                                            value={form.payment || 'unpaid'}
+                                                            value={form.payment || ''}
                                                             onValueChange={val => updateField('payment', val)}
                                                         >
                                                             <SelectTrigger className="h-8 text-[13px] font-medium rounded-lg bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#19376D]/20 dark:focus:ring-[#576CBC]/30 font-[Outfit]">
                                                                 <SelectValue placeholder="Select status" />
                                                             </SelectTrigger>
                                                             <SelectContent className="font-[Outfit]">
-                                                                <SelectItem value="unpaid">Unpaid</SelectItem>
                                                                 <SelectItem value="partial">Partial</SelectItem>
                                                                 <SelectItem value="paid">Paid</SelectItem>
                                                             </SelectContent>
@@ -935,14 +934,13 @@ const SmartScan = () => {
                                         <CreditCard className="w-3 h-3" strokeWidth={2} />Payment Status
                                     </Label>
                                     <Select
-                                        value={assignForm.payment || 'unpaid'}
+                                        value={assignForm.payment || ''}
                                         onValueChange={val => updateAssign('payment', val)}
                                     >
                                         <SelectTrigger className="h-8 text-[13px] font-medium rounded-lg bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/60 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#19376D]/20 dark:focus:ring-[#576CBC]/30 font-[Outfit]">
                                             <SelectValue placeholder="Select status" />
                                         </SelectTrigger>
                                         <SelectContent className="font-[Outfit]">
-                                            <SelectItem value="unpaid">Unpaid</SelectItem>
                                             <SelectItem value="partial">Partial</SelectItem>
                                             <SelectItem value="paid">Paid</SelectItem>
                                         </SelectContent>

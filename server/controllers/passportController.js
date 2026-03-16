@@ -14,9 +14,9 @@ const isValidYear = (y) => Number.isInteger(y) && y >= 1900 && y <= 2200;
 const isValidMonth = (m) => Number.isInteger(m) && m >= 0 && m <= 11;
 
 function normalizePaymentValue(value) {
-    if (value === undefined || value === null) return 'unpaid';
+    if (value === undefined || value === null) return '';
     const normalized = String(value).trim().toLowerCase();
-    if (!normalized || normalized === '0') return 'unpaid';
+    if (!normalized || normalized === '0') return '';
     return normalized;
 }
 

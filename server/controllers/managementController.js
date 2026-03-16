@@ -85,9 +85,9 @@ const isValidYear = (y) => Number.isInteger(y) && y >= 1900 && y <= 2200;
 const isValidMonth = (m) => Number.isInteger(m) && m >= 0 && m <= 11;
 
 function normalizePaymentValue(value) {
-    if (value === undefined || value === null) return 'unpaid';
+    if (value === undefined || value === null) return '';
     const normalized = String(value).trim().toLowerCase();
-    if (!normalized || normalized === '0') return 'unpaid';
+    if (!normalized || normalized === '0') return '';
     return normalized;
 }
 
@@ -426,10 +426,6 @@ export async function importExcel(req, res) {
                 const ref = XLSX.utils.encode_cell({ r, c });
                 const cell = sheet[ref];
                 const value = getCellText(cell, dateFieldSet.has(field));
-                // Debug: trace raw cell data for date columns
-                if (dateFieldSet.has(field) && cell) {
-                    console.log(`[DATE DEBUG] row=${r} field=${field} | t=${cell.t} | v=${cell.v} | w=${cell.w} | → "${value}"`);
-                }
                 if (value) rowObj[field] = value;
             }
             rows.push(rowObj);
@@ -438,9 +434,6 @@ export async function importExcel(req, res) {
         if (rows.length === 0) {
             return res.status(400).json({ success: false, error: 'The Excel file is empty' });
         }
-
-        console.log('📋 Excel headers detected:', detectedHeaders);
-        console.log('📋 Normalized headers:', detectedHeaders.map(h => `"${h}" → "${normalizeKey(h)}" → ${resolveField(h) || 'UNMATCHED'}`));
 
         const saved   = [];
         const skipped = [];

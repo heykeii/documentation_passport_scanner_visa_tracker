@@ -15,7 +15,6 @@ const client = new DynamoDBClient({
 
 //Wrap in Document Client
 const docClient = DynamoDBDocumentClient.from(client);
-console.log("DynamoDB Document Client Initialized");
 
 export default docClient;
 

@@ -33,23 +33,13 @@ app.get('/api/status', (req,res)=>{
 
 //Listening Port
 app.listen(PORT, async ()=>{
-    console.log(`
-        🚀 Server is running!
-        🔗 URL: http://localhost:${PORT}
-        `)
-
     try {
-    // Send a simple command to AWS to verify credentials
-    const data = await docClient.send(new ListTablesCommand({}));
-    console.log("✅ AWS Connection: SUCCESS");
-    
-  } catch (err) {
-    console.error("❌ AWS Connection: FAILED");
-    console.error(`📝 Error Message: ${err.message}`);
-    console.log("💡 Tip: Check your .env file for correct AWS_ACCESS_KEY_ID and REGION.");
-  }
+        await docClient.send(new ListTablesCommand({}));
+    } catch (err) {
+        // AWS connection check failed silently
+    }
 
-  startCronJobs();
+    startCronJobs();
 })
 
 //API Routes

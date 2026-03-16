@@ -1,4 +1,4 @@
-import docClient from "./config/db.js";
+import docClient from "../config/db.js";
 import { ListTablesCommand } from "@aws-sdk/client-dynamodb";
 
 async function testConnection(){
