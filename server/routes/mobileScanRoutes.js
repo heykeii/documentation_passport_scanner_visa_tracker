@@ -7,4 +7,23 @@ import {
     listPendingMobile,
     confirmMobileScan,
     deleteMobileScan,
-} from '../controllers/mobileScanController.js'
+} from '../controllers/mobileScanController.js';
+
+const router = express.Router();
+
+router.use(verifyAuth);
+
+router.get('/pending', listPendingMobile);
+
+router.post(
+    '/extract',
+    rateLimitMobileScan,
+    mobileUpload.single('image'),
+    extractFromMobile
+);
+
+router.post('/:scanId/confirm', confirmMobileScan);
+router.delete('/:scanId', deleteMobileScan);
+
+export default router;
+

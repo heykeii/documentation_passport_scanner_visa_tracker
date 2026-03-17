@@ -18,7 +18,7 @@ import {
 
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import {Eye, EyeOff} from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner';
 import { email } from 'zod'
 
@@ -36,10 +36,10 @@ const Login = () => {
         mode: "onBlur",
     });
 
-    const onSubmit = async(data) => {
+    const onSubmit = async (data) => {
         setIsLoading(true);
         try {
-            const response = await axios.post("http://localhost:3000/api/auth/login",{
+            const response = await axios.post("http://localhost:3000/api/auth/login", {
                 email: data.email,
                 password: data.password,
             });
@@ -54,27 +54,27 @@ const Login = () => {
         } catch (error) {
             const errorMessage = error.response?.data?.error || "Login Failed. Please Try Again.";
             toast.error(errorMessage);
-        } finally{
+        } finally {
             setIsLoading(false);
         }
     };
 
-  return (
-    <div className='flex min-h-screen overflow-hidden bg-slate-900'>
-        <AuthLeftPanel/>
-        <div className='flex-1 bg-white flex items-center justify-center px-8 py-10 relative overflow-y-auto'>
-             <div className="absolute top-0 right-0 w-125 h-125 rounded-full bg-indigo-400/5 blur-[80px] pointer-events-none" />
-             <div className="absolute bottom-0 left-0 w-100 h-100 rounded-full bg-indigo-400/5 blur-[80px] pointer-events-none" />
-               <div className="w-full max-w-130 bg-white/90 backdrop-blur-sm rounded-[28px] p-10 shadow-[0_32px_80px_rgba(11,36,71,0.10),0_4px_24px_rgba(11,36,71,0.06)] border border-white relative z-10">
+    return (
+        <div className='flex min-h-screen overflow-hidden bg-slate-900'>
+            <AuthLeftPanel />
+            <div className='flex-1 bg-white flex items-center justify-center px-8 py-10 relative overflow-y-auto'>
+                <div className="absolute top-0 right-0 w-125 h-125 rounded-full bg-indigo-400/5 blur-[80px] pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-100 h-100 rounded-full bg-indigo-400/5 blur-[80px] pointer-events-none" />
+                <div className="w-full max-w-130 bg-white/90 backdrop-blur-sm rounded-[28px] p-10 shadow-[0_32px_80px_rgba(11,36,71,0.10),0_4px_24px_rgba(11,36,71,0.06)] border border-white relative z-10">
                     <div className='flex gap-1.5 mb-8'>
-                        <div className='h-0.75 w-8 rounded-full bg-linear-to-r from-[#19376D] to-indigo-500'/>
-                        <div className='h-0.75 w-5 rounded-full bg-slate-200'/>
+                        <div className='h-0.75 w-8 rounded-full bg-linear-to-r from-[#19376D] to-indigo-500' />
+                        <div className='h-0.75 w-5 rounded-full bg-slate-200' />
                     </div>
 
                     <div className='mb-8'>
                         <div className='inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 text-[11px] font-semibold uppercase tracking-widest px-3 py-1 rounded-full mb-4'>
-                            <span className='w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse'/>
-                            Documentation Visa Tracker 
+                            <span className='w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse' />
+                            Documentation Visa Tracker
                         </div>
                         <h2 className='font-[Outfit] text-[28px] font-700 text-slate-900 leading-tight mb-2'>
                             Welcome Back
@@ -84,12 +84,12 @@ const Login = () => {
                         </p>
                     </div>
                     <Form {...form}>
-                       <form onSubmit={form.handleSubmit(onSubmit)} className='space-y-5'>
+                        <form onSubmit={form.handleSubmit(onSubmit)} className='space-y-5'>
                             {/**Email Field */}
                             <FormField
                                 control={form.control}
                                 name="email"
-                                render={({field})=>(
+                                render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className='text-[11.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]'>
                                             Email Address
@@ -102,7 +102,7 @@ const Login = () => {
                                                 {...field}
                                             />
                                         </FormControl>
-                                        <FormMessage className='text-[11px]'/>
+                                        <FormMessage className='text-[11px]' />
                                     </FormItem>
                                 )}
                             />
@@ -111,7 +111,7 @@ const Login = () => {
                             <FormField
                                 control={form.control}
                                 name="password"
-                                render={({field})=>(
+                                render={({ field }) => (
                                     <FormItem>
                                         <div className='flex items-center justify-between mb-1'>
                                             <FormLabel className='text-[11.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]'>
@@ -124,7 +124,7 @@ const Login = () => {
                                         <FormControl>
                                             <div className='relative'>
                                                 <Input
-                                                    type={showPassword?"text":"password"}
+                                                    type={showPassword ? "text" : "password"}
                                                     placeholder="Enter your password"
                                                     className='h-12 px-4 pr-12 text-[14px] text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-2xl bg-slate-50/80 focus-visible:border-indigo-400 focus-visible:ring-indigo-400/20 focus-visible:ring-[3px] transition-all w-full'
                                                     {...field}
@@ -133,15 +133,15 @@ const Login = () => {
                                                     type="button"
                                                     variant='ghost'
                                                     size='icon'
-                                                    onClick={()=>setShowPassword(!showPassword)}
+                                                    onClick={() => setShowPassword(!showPassword)}
                                                     className='absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-400 hover:text-indigo-500 hover:bg-transparent cursor-pointer'
-                                                
+
                                                 >
 
-                                                </Button>                                    
+                                                </Button>
                                             </div>
                                         </FormControl>
-                                        <FormMessage className='text-[11px]'/>
+                                        <FormMessage className='text-[11px]' />
                                     </FormItem>
                                 )}
                             />
@@ -151,14 +151,14 @@ const Login = () => {
                                 type='submit'
                                 disabled={isLoading}
                                 className='w-full h-12 mt-2 bg-linear-to-r from-[#19376D] to-indigo-500 text-white font-[Outfit] text-[15px] font-semibold rounded-[14px] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 active:translate-y-0 transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50 cursor-pointer'
-                             >
+                            >
                                 {isLoading ? "Signing In..." : "SignIn"}
-                            </Button> 
-                        </form> 
+                            </Button>
+                        </form>
                     </Form>
-               </div>
+                </div>
+            </div>
         </div>
-    </div>
-  )
+    )
 }
 export default Login

@@ -13,6 +13,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import { startCronJobs } from './services/cronService.js';
 import managementRoutes from './routes/managementRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
+import mobileScanRoutes from './routes/mobileScanRoutes.js';
 
 dotenv.config();
 
@@ -50,6 +51,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/management', managementRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/mobile-scan', mobileScanRoutes);
 
 //Protected route
 app.get('/api/protected', verifyAuth, (req,res)=>{

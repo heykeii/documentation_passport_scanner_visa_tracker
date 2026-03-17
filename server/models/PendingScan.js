@@ -1,12 +1,12 @@
 import { PutCommand, GetCommand, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import docClient from "../config/db.js";
-import {v4 as uuidv4} from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 
 const TABLE_NAME = "PendingScans";
 
 
 //save pending scan
-export async function create(data){
+export async function create(data) {
     try {
         const scanId = uuidv4();
         const timestamp = new Date().toISOString();
@@ -20,8 +20,17 @@ export async function create(data){
             passportNumber: data.passportNumber || "",
             dateOfIssue: data.dateOfIssue || "",
             dateOfExpiry: data.dateOfExpiry || "",
+
+            imageUrl: data.imageUrl || "",
+            source: data.source || "web",
+            confidence: data.confidence || {},
+            failureReason: data.failureReason || "",
+            mimeType: data.mimeType || "",
+            originalFileName: data.originalFileName || "",
+            scannedBy: data.scannedBy || "",
+
             scannedAt: timestamp,
-            status: "pending", 
+            status: data.status || "pending",
         };
 
         await docClient.send(
@@ -38,14 +47,14 @@ export async function create(data){
 }
 
 //get all pending scan
-export async function getAllPending(){
+export async function getAllPending() {
     try {
         const result = await docClient.send(
             new ScanCommand({
                 TableName: TABLE_NAME,
                 FilterExpression: "#s = :pending",
-                ExpressionAttributeNames: {"#s": "status"},
-                ExpressionAttributeValues: {":pending": "pending"},
+                ExpressionAttributeNames: { "#s": "status" },
+                ExpressionAttributeValues: { ":pending": "pending" },
             })
         );
         return result.Items || [];
@@ -62,7 +71,7 @@ export async function findById(scanId) {
         const result = await docClient.send(
             new GetCommand({
                 TableName: TABLE_NAME,
-                Key: {scanId},
+                Key: { scanId },
             })
         );
         return result.Item || null;
@@ -73,12 +82,12 @@ export async function findById(scanId) {
 }
 
 //Delete a pending scan
-export async function remove(scanId){
+export async function remove(scanId) {
     try {
         await docClient.send(
             new DeleteCommand({
                 TableName: TABLE_NAME,
-                Key: {scanId},
+                Key: { scanId },
             })
         );
         return true;
