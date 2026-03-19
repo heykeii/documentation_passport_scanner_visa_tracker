@@ -1,422 +1,994 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:math' as math;
+import 'dart:ui';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'core/config/app_config.dart';
+import 'home_page.dart';
+import 'pending_scan_page.dart';
+import 'profile_page.dart';
+import 'search_page.dart';
 
 void main() {
-  runApp(const ProviderScope(child: PassportScannerApp()));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ),
+  );
+  runApp(const PassportScannerApp());
 }
 
-final authStateProvider = StateProvider<bool>((ref) => false);
+// ─────────────────────────────────────────────────────────────────────────────
+// PALETTE
+// ─────────────────────────────────────────────────────────────────────────────
+class TW {
+  static const cream = Color(0xFFFFFDF1);
+  static const peach = Color(0xFFFFCE99);
+  static const amber = Color(0xFFFF9644);
+  static const brown = Color(0xFF562F00);
+  static const amberDk = Color(0xFFFF7A1A);
+  static const white70 = Color(0xB3FFFFFF);
+  static const white90 = Color(0xE6FFFFFF);
+  static const navy = Color(0xFF161E54);
+  static const navyLt = Color(0xFF1E2A6E);
+  static const sky = Color(0xFFBBE0EF);
+}
 
-class PassportScannerApp extends ConsumerWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// APP
+// ─────────────────────────────────────────────────────────────────────────────
+class PassportScannerApp extends StatelessWidget {
   const PassportScannerApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isLoggedIn = ref.watch(authStateProvider);
-
-    final router = GoRouter(
-      initialLocation: '/login',
-      routes: <RouteBase>[
-        GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-        GoRoute(path: '/home', builder: (context, state) => const HomePage()),
-      ],
-      redirect: (context, state) {
-        final goingToLogin = state.matchedLocation == '/login';
-
-        if (!isLoggedIn && !goingToLogin) return '/login';
-        if (isLoggedIn && goingToLogin) return '/home';
-        return null;
+  Widget build(BuildContext context) {
+    return ScreenUtilInit(
+      designSize: const Size(375, 812), // Standard iPhone X design size
+      minTextAdapt: true,
+      splitScreenMode: true,
+      builder: (_, child) {
+        return MaterialApp(
+          title: 'TradeWings',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            scaffoldBackgroundColor: TW.cream,
+            useMaterial3: true,
+            textTheme: GoogleFonts.outfitTextTheme(),
+          ),
+          home: const LoginPage(),
+        );
       },
-    );
-
-    return ShadApp.router(
-      title: 'Docs Passport Scanner',
-      debugShowCheckedModeBanner: false,
-      routerConfig: router,
     );
   }
 }
 
-class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+// ─────────────────────────────────────────────────────────────────────────────
+// BACKGROUND PAINTER  — layered mesh + scanline + orbit
+// ─────────────────────────────────────────────────────────────────────────────
+class BgPainter extends CustomPainter {
+  final double t; // 0..1 looping
+
+  BgPainter(this.t);
 
   @override
-  ConsumerState<LoginPage> createState() => _LoginPageState();
+  void paint(Canvas canvas, Size s) {
+    _orb(
+      canvas,
+      s,
+      Offset(s.width * 0.88, s.height * 0.18),
+      s.width * 0.55,
+      TW.peach.withOpacity(0.45),
+    );
+    _orb(
+      canvas,
+      s,
+      Offset(s.width * 0.08, s.height * 0.72),
+      s.width * 0.50,
+      TW.navy.withOpacity(0.25),
+    );
+    _orb(
+      canvas,
+      s,
+      Offset(s.width * 0.15, s.height * 0.15),
+      s.width * 0.35,
+      TW.navyLt.withOpacity(0.15),
+    );
+    _orb(
+      canvas,
+      s,
+      Offset(s.width * 0.5, s.height * 0.45),
+      s.width * 0.70,
+      TW.peach.withOpacity(0.10),
+    );
+
+    // dot matrix
+    final dp = Paint()
+      ..color = TW.brown.withOpacity(0.055)
+      ..style = PaintingStyle.fill;
+    for (double x = 14; x < s.width; x += 24) {
+      for (double y = 14; y < s.height; y += 24) {
+        canvas.drawCircle(Offset(x, y), 1.15, dp);
+      }
+    }
+
+    // arc rings — top right corner
+    final rp = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1;
+    for (int i = 0; i < 5; i++) {
+      final r = s.width * (0.18 + i * 0.10);
+      rp.color = TW.amber.withOpacity(0.07 + i * 0.015);
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: Offset(s.width * 1.05, -s.height * 0.04),
+          radius: r,
+        ),
+        math.pi * 0.58,
+        math.pi * 0.46,
+        false,
+        rp,
+      );
+    }
+
+    // horizontal scanline sweep
+    final lineY = s.height * ((t * 1.4 - 0.2).clamp(0.0, 1.0));
+    final scanP = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          TW.amber.withOpacity(0.0),
+          TW.amber.withOpacity(0.07),
+          TW.amber.withOpacity(0.0),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromLTWH(0, lineY - 60, s.width, 120));
+    canvas.drawRect(Rect.fromLTWH(0, lineY - 60, s.width, 120), scanP);
+
+    // orbit dots
+    final op = Paint()..style = PaintingStyle.fill;
+    final cx = s.width * 0.5;
+    final cy = s.height * 0.38;
+    for (int i = 0; i < 10; i++) {
+      final angle = (i / 10) * 2 * math.pi + t * 2 * math.pi;
+      final rx = cx + math.cos(angle) * s.width * 0.44;
+      final ry = cy + math.sin(angle) * s.height * 0.38;
+      final scale = (math.sin(angle + math.pi / 2) + 1) / 2;
+      op.color = TW.amber.withOpacity(0.12 + scale * 0.10);
+      canvas.drawCircle(Offset(rx, ry), 2.0 + scale * 1.5, op);
+    }
+  }
+
+  void _orb(Canvas c, Size s, Offset center, double radius, Color color) {
+    c.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [color, color.withOpacity(0.0)],
+        ).createShader(Rect.fromCircle(center: center, radius: radius)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(BgPainter old) => old.t != t;
 }
 
-class _LoginPageState extends ConsumerState<LoginPage>
-    with SingleTickerProviderStateMixin {
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _isLoading = false;
+// ─────────────────────────────────────────────────────────────────────────────
+// PASSPORT STAMP LOGO PAINTER
+// ─────────────────────────────────────────────────────────────────────────────
+class StampPainter extends CustomPainter {
+  final double glowPulse; // 0..1
 
-  late AnimationController _animController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+  StampPainter(this.glowPulse);
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final cx = s.width / 2, cy = s.height / 2, r = s.width / 2 - 3;
+
+    // Outer glow
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r + 6 + glowPulse * 4,
+      Paint()
+        ..color = TW.amber.withOpacity(0.12 + glowPulse * 0.08)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+    );
+
+    // Fill
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [TW.cream, TW.peach.withOpacity(0.35)],
+        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r)),
+    );
+
+    // Double ring
+    final stroke = Paint()
+      ..color = TW.brown
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(Offset(cx, cy), r, stroke..strokeWidth = 2.5);
+    canvas.drawCircle(Offset(cx, cy), r - 8, stroke..strokeWidth = 1.0);
+
+    // Wings — left
+    final wp = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    void wing(bool left) {
+      final m = left ? -1.0 : 1.0;
+      for (int f = 0; f < 3; f++) {
+        final fw = 0.22 + f * 0.12;
+        final fh = 0.18 + f * 0.10;
+        final path = Path()
+          ..moveTo(cx + m * r * 0.18, cy + r * 0.08)
+          ..cubicTo(
+            cx + m * r * fw,
+            cy - r * fh,
+            cx + m * r * (fw + 0.32),
+            cy - r * (fh - 0.12),
+            cx + m * r * (fw + 0.28),
+            cy + r * 0.22,
+          );
+        wp
+          ..color = TW.amber.withOpacity(0.9 - f * 0.22)
+          ..strokeWidth = 2.4 - f * 0.6;
+        canvas.drawPath(path, wp);
+      }
+    }
+
+    wing(true);
+    wing(false);
+
+    // Globe — centre
+    final gp = Paint()
+      ..color = TW.brown.withOpacity(0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    final gr = r * 0.26;
+    canvas.drawCircle(Offset(cx, cy), gr, gp);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, cy), width: gr * 2, height: gr * 1.0),
+      gp..strokeWidth = 1.0,
+    );
+    canvas.drawLine(Offset(cx, cy - gr), Offset(cx, cy + gr), gp);
+    canvas.drawLine(Offset(cx - gr, cy), Offset(cx + gr, cy), gp);
+
+    // Dashes on inner ring
+    final dashP = Paint()
+      ..color = TW.brown.withOpacity(0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    const dashes = 24;
+    for (int i = 0; i < dashes; i++) {
+      final a = (i / dashes) * 2 * math.pi;
+      final r1 = r - 8;
+      final r2 = r1 - 5;
+      if (i % 2 == 0) {
+        canvas.drawLine(
+          Offset(cx + math.cos(a) * r1, cy + math.sin(a) * r1),
+          Offset(cx + math.cos(a) * r2, cy + math.sin(a) * r2),
+          dashP,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(StampPainter old) => old.glowPulse != glowPulse;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MRZ STRIP — decorative passport machine-readable zone
+// ─────────────────────────────────────────────────────────────────────────────
+class MrzStrip extends StatelessWidget {
+  const MrzStrip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+      decoration: BoxDecoration(
+        color: TW.brown.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: TW.brown.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _mrzRow('P<PHL<TOURS<R<US<<PASSPORT<SCANNER<<<<<<<<<<'),
+          const SizedBox(height: 3),
+          _mrzRow('TW00000001PHL8901015M3001019<<<<<<<<<<<<<<06'),
+        ],
+      ),
+    );
+  }
+
+  Widget _mrzRow(String text) => Text(
+    text,
+    style: GoogleFonts.sourceCodePro(
+      fontSize: 9.5,
+      letterSpacing: 1.6,
+      color: TW.brown.withOpacity(0.28),
+      fontWeight: FontWeight.w500,
+    ),
+    overflow: TextOverflow.ellipsis,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ELEVATED TEXT FIELD
+// ─────────────────────────────────────────────────────────────────────────────
+class TWTextField extends StatefulWidget {
+  final String label;
+  final String hint;
+  final IconData icon;
+  final bool obscure;
+  final TextEditingController controller;
+  final TextInputType keyboardType;
+  final ValueChanged<String>? onChanged;
+
+  const TWTextField({
+    super.key,
+    required this.label,
+    required this.hint,
+    required this.icon,
+    required this.controller,
+    this.obscure = false,
+    this.keyboardType = TextInputType.text,
+    this.onChanged,
+  });
+
+  @override
+  State<TWTextField> createState() => _TWTextFieldState();
+}
+
+class _TWTextFieldState extends State<TWTextField>
+    with SingleTickerProviderStateMixin {
+  bool _focused = false;
+  bool _visible = false;
+  late AnimationController _ac;
+  late Animation<double> _glow;
 
   @override
   void initState() {
     super.initState();
-    _animController = AnimationController(
+    _ac = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 280),
     );
-    _fadeAnimation = CurvedAnimation(
-      parent: _animController,
-      curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
-    );
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: _animController,
-            curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
-          ),
-        );
-
-    _animController.forward();
+    _glow = CurvedAnimation(parent: _ac, curve: Curves.easeOut);
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _animController.dispose();
+    _ac.dispose();
     super.dispose();
   }
 
-  void _handleLogin() {
-    setState(() => _isLoading = true);
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ref.read(authStateProvider.notifier).state = true;
-      }
-    });
+  void _focus(bool v) {
+    setState(() => _focused = v);
+    v ? _ac.forward() : _ac.reverse();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Cyber/Tech Dark Theme Colors
-    const Color bgDark = Color(0xFF030712);
-    // ignore: unused_local_variable
-    const Color bgLight = Color(0xFF0F172A);
-    const Color accentBlue = Color(0xFF3B82F6);
-    const Color accentCyan = Color(0xFF06B6D4);
-
-    return Scaffold(
-      backgroundColor: bgDark,
-      body: Stack(
-        children: [
-          // 1. Background Grid & Gradient
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _GridPainter(
-                color: accentBlue.withValues(alpha: 0.05),
-                spacing: 40,
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Floating label
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 220),
+          style: GoogleFonts.outfit(
+            fontSize: 10.5.sp,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.8.w,
+            color: _focused ? TW.amber : TW.brown.withOpacity(0.45),
           ),
-          Positioned(
-            top: -100,
-            right: -100,
-            child: Container(
-              width: 400,
-              height: 400,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    accentBlue.withValues(alpha: 0.15),
-                    Colors.transparent,
-                  ],
+          child: Text(widget.label.toUpperCase()),
+        ),
+        SizedBox(height: 8.h),
+        AnimatedBuilder(
+          animation: _glow,
+          builder: (_, child) => Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14.r),
+              boxShadow: [
+                BoxShadow(
+                  color: TW.amber.withOpacity(0.22 * _glow.value),
+                  blurRadius: 18.r,
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14.r),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: Focus(
+                onFocusChange: _focus,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  decoration: BoxDecoration(
+                    color: _focused
+                        ? Colors.white.withOpacity(0.92)
+                        : Colors.white.withOpacity(0.62),
+                    borderRadius: BorderRadius.circular(14.r),
+                    border: Border.all(
+                      color: _focused ? TW.amber : TW.peach.withOpacity(0.6),
+                      width: _focused ? 1.8.w : 1.2.w,
+                    ),
+                  ),
+                  child: TextField(
+                    controller: widget.controller,
+                    obscureText: widget.obscure && !_visible,
+                    keyboardType: widget.keyboardType,
+                    onChanged: widget.onChanged,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15.5.sp,
+                      fontWeight: FontWeight.w500,
+                      color: TW.brown,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: widget.hint,
+                      hintStyle: GoogleFonts.outfit(
+                        fontSize: 14.5.sp,
+                        fontWeight: FontWeight.w400,
+                        color: TW.brown.withOpacity(0.28),
+                      ),
+                      prefixIcon: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        padding: EdgeInsets.only(left: 16.w, right: 10.w),
+                        child: Icon(
+                          widget.icon,
+                          size: 19.sp,
+                          color: _focused
+                              ? TW.amber
+                              : TW.brown.withOpacity(0.38),
+                        ),
+                      ),
+                      suffixIcon: widget.obscure
+                          ? GestureDetector(
+                              onTap: () => setState(() => _visible = !_visible),
+                              child: Icon(
+                                _visible
+                                    ? Icons.visibility_rounded
+                                    : Icons.visibility_off_rounded,
+                                size: 19.sp,
+                                color: TW.brown.withOpacity(0.38),
+                              ),
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 6.w,
+                        vertical: 16.h,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-          Positioned(
-            bottom: -150,
-            left: -100,
-            child: Container(
-              width: 500,
-              height: 500,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    accentCyan.withValues(alpha: 0.1),
-                    Colors.transparent,
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHIMMER BUTTON
+// ─────────────────────────────────────────────────────────────────────────────
+class ShimmerButton extends StatefulWidget {
+  final bool isLoading;
+  final VoidCallback? onTap;
+
+  const ShimmerButton({super.key, required this.isLoading, this.onTap});
+
+  @override
+  State<ShimmerButton> createState() => _ShimmerButtonState();
+}
+
+class _ShimmerButtonState extends State<ShimmerButton> {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.isLoading ? null : widget.onTap,
+      child:
+          Container(
+                width: double.infinity,
+                height: 58.h,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16.r),
+                  color: const Color(0xFFFF9644),
+                  boxShadow: [
+                    BoxShadow(
+                      color: TW.amber.withOpacity(0.38),
+                      blurRadius: 24.r,
+                      spreadRadius: 0,
+                      offset: Offset(0, 8.h),
+                    ),
+                    BoxShadow(
+                      color: TW.amberDk.withOpacity(0.15),
+                      blurRadius: 6.r,
+                      offset: Offset(0, 2.h),
+                    ),
                   ],
                 ),
-              ),
-            ),
-          ),
-
-          // 2. Main Content
-          SafeArea(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 32),
-                      // Header Logo
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: accentBlue.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: accentBlue.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.document_scanner_rounded,
-                              color: accentBlue,
-                              size: 24,
-                            ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Gloss overlay
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 28.h,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(16.r),
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Tradewings',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Text(
-                                'DOCUMENTATION',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white.withOpacity(0.18),
+                              Colors.white.withOpacity(0.0),
                             ],
                           ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 48),
-
-                      // Welcome Text
-                      Row(
-                        children: [
-                          Container(width: 20, height: 1, color: accentBlue),
-                          const SizedBox(width: 8),
-                          Text(
-                            'WELCOME BACK',
-                            style: GoogleFonts.inter(
-                              color: accentBlue,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 2.0,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Sign in\nto your\naccount.',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 52,
-                          fontWeight: FontWeight.w800,
-                          height: 0.95,
-                          letterSpacing: -1.0,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Authorized documentation\nstaff access only.',
-                        style: GoogleFonts.inter(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 15,
-                          height: 1.4,
-                        ),
-                      ),
-
-                      const Spacer(),
-
-                      // Form Fields
-                      _TechInputField(
-                        controller: _emailController,
-                        label: 'EMAIL ADDRESS',
-                        hint: 'officer@org.ph',
-                        icon: Icons.mail_outline_rounded,
-                      ),
-                      const SizedBox(height: 16),
-                      _TechInputField(
-                        controller: _passwordController,
-                        label: 'PASSWORD',
-                        hint: 'Enter your password',
-                        icon: Icons.lock_outline_rounded,
-                        isPassword: true,
-                        obscureText: _obscurePassword,
-                        onTogglePassword: () => setState(
-                          () => _obscurePassword = !_obscurePassword,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {},
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white.withValues(
-                              alpha: 0.6,
+                    ),
+                    widget.isLoading
+                        ? SizedBox(
+                            width: 22.w,
+                            height: 22.w,
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              valueColor: AlwaysStoppedAnimation(
+                                Color(0xFFFFFDF1),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            'Forgot password?',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Sign In Button
-                      GestureDetector(
-                        onTap: _isLoading || _emailController.text.isEmpty
-                            ? null
-                            : _handleLogin,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          height: 64,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            gradient: LinearGradient(
-                              colors: _isLoading
-                                  ? [
-                                      const Color(0xFF1E293B),
-                                      const Color(0xFF0F172A),
-                                    ]
-                                  : [
-                                      const Color(0xFF3B82F6),
-                                      const Color(0xFF2563EB),
-                                    ],
-                            ),
-                            boxShadow: [
-                              if (!_isLoading)
-                                BoxShadow(
-                                  color: accentBlue.withValues(alpha: 0.3),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 8),
-                                ),
-                            ],
-                          ),
-                          child: Row(
+                          )
+                        : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              if (_isLoading)
-                                SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              else ...[
+                              Text(
+                                'SIGN IN',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 14.sp,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 3.2.w,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              SizedBox(width: 12.w),
+                              Container(
+                                width: 28.w,
+                                height: 28.w,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.22),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: Colors.white,
+                                  size: 15.sp,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ],
+                ),
+              )
+              .animate(onPlay: (c) => c.repeat())
+              .shimmer(
+                duration: 2.seconds,
+                color: const Color(0xFFFFB570).withOpacity(0.3),
+                angle: 0.785, // 45 degrees
+              ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN LOGIN PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage>
+    with SingleTickerProviderStateMixin {
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+
+  late AnimationController _bgCtrl; // background loop
+
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _bgCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 22),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _bgCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (_emailCtrl.text.isEmpty || _passCtrl.text.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter both email and password'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse(AppConfig.loginUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': _emailCtrl.text.trim(),
+          'password': _passCtrl.text,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OfficerHomeShell(
+              user: data['user'],
+              authToken: (data['token'] ?? '').toString(),
+            ),
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data['error'] ?? 'Login failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Connection Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool compact = 1.sh < 700;
+
+    return Scaffold(
+      backgroundColor: TW.cream,
+      resizeToAvoidBottomInset: true,
+      body: Stack(
+        children: [
+          // ── Animated BG ────────────────────────────────────────────────
+          AnimatedBuilder(
+            animation: _bgCtrl,
+            builder: (_, __) => CustomPaint(
+              size: Size(1.sw, 1.sh),
+              painter: BgPainter(_bgCtrl.value),
+            ),
+          ),
+
+          // ── Content ────────────────────────────────────────────────────
+          SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: 1.sh - 44),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 1.sw > 600 ? 48.w : 24.w,
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(height: compact ? 20.h : 36.h),
+
+                      // ── LOGO ──────────────────────────────────────────
+                      Image.asset(
+                            'assets/tru_logo.png',
+                            width: 200.w,
+                            height: 200.h,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                width: 200.w,
+                                height: 200.h,
+                                decoration: BoxDecoration(
+                                  color: TW.amber.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20.r),
+                                ),
+                              );
+                            },
+                          )
+                          .animate()
+                          .fadeIn(duration: 600.ms)
+                          .scale(
+                            begin: const Offset(0.65, 0.65),
+                            duration: 600.ms,
+                            curve: Curves.elasticOut,
+                          ),
+
+                      SizedBox(height: compact ? 16.h : 22.h),
+
+                      // ── BRAND TEXT ────────────────────────────────────
+                      Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16.w,
+                              vertical: 8.h,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  TW.navy.withOpacity(0.08),
+                                  TW.amber.withOpacity(0.08),
+                                ],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12.r),
+                              border: Border.all(
+                                color: TW.navy.withOpacity(0.2),
+                                width: 0.8.w,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
                                 Text(
-                                  'Sign In',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
+                                  'PASSPORT',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 9.5.sp,
+                                    letterSpacing: 2.5.w,
+                                    fontWeight: FontWeight.w600,
+                                    color: TW.navy,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_forward_rounded,
-                                    color: Colors.white,
-                                    size: 16,
+                                SizedBox(width: 6.w),
+                                Text(
+                                  'SCANNER',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 9.5.sp,
+                                    letterSpacing: 2.5.w,
+                                    fontWeight: FontWeight.w600,
+                                    color: TW.amber,
                                   ),
                                 ),
                               ],
-                            ],
+                            ),
+                          )
+                          .animate(delay: 200.ms)
+                          .fadeIn(duration: 500.ms)
+                          .slideY(
+                            begin: 0.2,
+                            duration: 500.ms,
+                            curve: Curves.easeOut,
+                          ),
+
+                      SizedBox(height: compact ? 24.h : 36.h),
+
+                      // ── CARD ──────────────────────────────────────────
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(28.r),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: Container(
+                            padding: EdgeInsets.fromLTRB(
+                              26.w,
+                              compact ? 28.h : 34.h,
+                              26.w,
+                              compact ? 26.h : 32.h,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withOpacity(0.70),
+                                  Colors.white.withOpacity(0.55),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(28.r),
+                              border: Border.all(
+                                color: TW.peach.withOpacity(0.55),
+                                width: 1.2.w,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: TW.brown.withOpacity(0.05),
+                                  blurRadius: 50.r,
+                                  spreadRadius: 2.r,
+                                  offset: Offset(0, 16.h),
+                                ),
+                                BoxShadow(
+                                  color: TW.amber.withOpacity(0.07),
+                                  blurRadius: 20.r,
+                                  offset: Offset(0, 4.h),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Heading
+                                Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Welcome Back',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 26.sp,
+                                            fontWeight: FontWeight.w700,
+                                            color: TW.brown,
+                                            height: 1.1,
+                                          ),
+                                        ),
+                                        SizedBox(height: 4.h),
+                                        Text(
+                                          'Sign in to continue scanning',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 13.sp,
+                                            color: TW.brown.withOpacity(0.45),
+                                            fontWeight: FontWeight.w400,
+                                            letterSpacing: 0.1.w,
+                                          ),
+                                        ),
+                                        SizedBox(height: 6.h),
+                                        Container(
+                                          width: 36.w,
+                                          height: 2.5.h,
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [TW.navy, TW.amber],
+                                              begin: Alignment.centerLeft,
+                                              end: Alignment.centerRight,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              2.r,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                    .animate(delay: 250.ms)
+                                    .fadeIn(duration: 500.ms)
+                                    .slideY(
+                                      begin: 0.2,
+                                      duration: 500.ms,
+                                      curve: Curves.easeOut,
+                                    ),
+
+                                SizedBox(height: compact ? 20.h : 28.h),
+
+                                // Email
+                                TWTextField(
+                                      label: 'Email',
+                                      hint: 'you@example.com',
+                                      icon: Icons.alternate_email_rounded,
+                                      controller: _emailCtrl,
+                                      keyboardType: TextInputType.emailAddress,
+                                    )
+                                    .animate(delay: 350.ms)
+                                    .fadeIn(duration: 500.ms)
+                                    .slideY(
+                                      begin: 0.2,
+                                      duration: 500.ms,
+                                      curve: Curves.easeOut,
+                                    ),
+
+                                SizedBox(height: compact ? 16.h : 20.h),
+
+                                // Password
+                                TWTextField(
+                                      label: 'Password',
+                                      hint: '••••••••',
+                                      icon: Icons.lock_outline_rounded,
+                                      controller: _passCtrl,
+                                      obscure: true,
+                                    )
+                                    .animate(delay: 450.ms)
+                                    .fadeIn(duration: 500.ms)
+                                    .slideY(
+                                      begin: 0.2,
+                                      duration: 500.ms,
+                                      curve: Curves.easeOut,
+                                    ),
+
+                                SizedBox(height: compact ? 20.h : 28.h),
+
+                                // Button
+                                ShimmerButton(
+                                      isLoading: _isLoading,
+                                      onTap: _isLoading ? null : _login,
+                                    )
+                                    .animate(delay: 550.ms)
+                                    .fadeIn(duration: 500.ms)
+                                    .slideY(
+                                      begin: 0.2,
+                                      duration: 500.ms,
+                                      curve: Curves.easeOut,
+                                    ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
 
-                      const Spacer(),
+                      SizedBox(height: compact ? 14.h : 20.h),
 
-                      // Footer
-                      Center(
-                        child: Text(
-                          'Secured with JWT',
-                          style: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.03),
-                          borderRadius: BorderRadius.circular(100),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.05),
-                          ),
-                        ),
+                      // ── FOOTER ────────────────────────────────────────
+                      Padding(
+                        padding: EdgeInsets.only(bottom: 8.h),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF10B981),
-                                shape: BoxShape.circle,
-                              ),
+                            Icon(
+                              Icons.verified_user_outlined,
+                              size: 12.sp,
+                              color: TW.brown.withOpacity(0.28),
                             ),
-                            const SizedBox(width: 8),
+                            SizedBox(width: 5.w),
                             Text(
-                              'Restricted • Authorized staff only • v1.0',
-                              style: GoogleFonts.inter(
-                                color: Colors.white.withValues(alpha: 0.4),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                              '© 2026 · Secured by AES-256',
+                              style: GoogleFonts.outfit(
+                                fontSize: 10.sp,
+                                color: TW.brown.withOpacity(0.28),
+                                letterSpacing: 0.2.w,
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 24),
+                      ).animate(delay: 750.ms).fadeIn(duration: 500.ms),
+
+                      SizedBox(height: 16.h),
                     ],
                   ),
                 ),
@@ -427,186 +999,136 @@ class _LoginPageState extends ConsumerState<LoginPage>
       ),
     );
   }
+
+  Widget _hairline() => Expanded(
+    child: Container(height: 1.h, color: TW.brown.withOpacity(0.12)),
+  );
 }
 
-class _GridPainter extends CustomPainter {
-  final Color color;
-  final double spacing;
+class OfficerHomeShell extends StatefulWidget {
+  final Map<String, dynamic>? user;
+  final String authToken;
 
-  _GridPainter({required this.color, required this.spacing});
+  const OfficerHomeShell({super.key, this.user, required this.authToken});
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
+  State<OfficerHomeShell> createState() => _OfficerHomeShellState();
+}
 
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
+class _OfficerHomeShellState extends State<OfficerHomeShell> {
+  late Map<String, dynamic> _user;
 
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
+  @override
+  void initState() {
+    super.initState();
+    _user = Map<String, dynamic>.from(widget.user ?? {});
   }
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
+  void _openFeature(BuildContext context, String title, String message) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FeaturePlaceholderPage(title: title, message: message),
+      ),
+    );
+  }
 
-class _TechInputField extends StatefulWidget {
-  final TextEditingController controller;
-  final String label;
-  final String hint;
-  final IconData icon;
-  final bool isPassword;
-  final bool obscureText;
-  final VoidCallback? onTogglePassword;
-
-  const _TechInputField({
-    required this.controller,
-    required this.label,
-    required this.hint,
-    required this.icon,
-    this.isPassword = false,
-    this.obscureText = false,
-    this.onTogglePassword,
-  });
-
-  @override
-  State<_TechInputField> createState() => _TechInputFieldState();
-}
-
-class _TechInputFieldState extends State<_TechInputField> {
-  bool _isFocused = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      onFocusChange: (hasFocus) => setState(() => _isFocused = hasFocus),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A).withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _isFocused
-                ? const Color(0xFF3B82F6)
-                : Colors.white.withValues(alpha: 0.1),
-            width: 1.5,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    widget.icon,
-                    color: _isFocused
-                        ? const Color(0xFF3B82F6)
-                        : Colors.white.withValues(alpha: 0.5),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.label,
-                        style: GoogleFonts.inter(
-                          color: _isFocused
-                              ? const Color(0xFF3B82F6)
-                              : Colors.white.withValues(alpha: 0.5),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: widget.controller,
-                        obscureText: widget.obscureText,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
-                          hintText: widget.hint,
-                          hintStyle: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            fontSize: 16,
-                          ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (widget.isPassword)
-                  GestureDetector(
-                    onTap: widget.onTogglePassword,
-                    child: Icon(
-                      widget.obscureText
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      color: Colors.white.withValues(alpha: 0.4),
-                      size: 20,
-                    ),
-                  ),
-                if (!widget.isPassword && widget.controller.text.isNotEmpty)
-                  GestureDetector(
-                    onTap: widget.controller.clear,
-                    child: Icon(
-                      Icons.cancel,
-                      color: Colors.white.withValues(alpha: 0.4),
-                      size: 20,
-                    ),
-                  ),
-              ],
-            ),
-          ],
+  void _openPendingScans(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PendingScansPage(
+          authToken: widget.authToken,
+          userEmail: (_user['email'] ?? '').toString(),
         ),
       ),
     );
   }
-}
 
-class HomePage extends ConsumerWidget {
-  const HomePage({super.key});
+  void _openSearch(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SearchPage(
+          authToken: widget.authToken,
+          userEmail: (_user['email'] ?? '').toString(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProfile(BuildContext context) async {
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => ProfilePage(authToken: widget.authToken, user: _user),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _user.addAll(result);
+      });
+    }
+  }
+
+  void _handleBottomTab(BuildContext context, int index) {
+    if (index == 0) {
+      _openPendingScans(context);
+      return;
+    }
+
+    if (index == 2) {
+      _openSearch(context);
+    }
+  }
+
+  void _logout(BuildContext context) {
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginPage()));
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Docs Passport Scanner'),
-        actions: [
-          IconButton(
-            onPressed: () {
-              ref.read(authStateProvider.notifier).state = false;
-            },
-            icon: const Icon(Icons.logout),
-          ),
-        ],
+  Widget build(BuildContext context) {
+    return HomePage(
+      user: _user,
+      authToken: widget.authToken,
+      onProfileTap: () => _openProfile(context),
+      onLogoutTap: () => _logout(context),
+      onScanTap: () => _openFeature(
+        context,
+        'Passport Scanner',
+        'Camera capture and upload to pending queue will be implemented next.',
       ),
-      body: const Center(
-        child: Text(
-          'Home placeholder\nStep 1 complete',
-          textAlign: TextAlign.center,
+      onViewAllTap: () => _openPendingScans(context),
+      onTabSelected: (index) => _handleBottomTab(context, index),
+    );
+  }
+}
+
+class FeaturePlaceholderPage extends StatelessWidget {
+  final String title;
+  final String message;
+
+  const FeaturePlaceholderPage({
+    super.key,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: TW.brown,
+            ),
+          ),
         ),
       ),
     );
